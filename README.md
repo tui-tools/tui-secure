@@ -2,9 +2,9 @@
 
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/tui-tools/tui-secure/badge)](https://scorecard.dev/viewer/?uri=github.com/tui-tools/tui-secure)
 
-> **Beta.** Beta: the family is days old and still changing. Package names,
-> flags and keys may move without notice until 1.0. Pin versions, and report
-> what breaks.
+> **Beta.** The family is days old and still changing. Package names, flags
+> and keys may move without notice until 1.0. Pin versions, and report what
+> breaks.
 
 One screen for the security posture of one Linux machine. Eight probes — Secure
 Boot, the MAC layer, the firewall, sshd, pending updates, accounts, kernel
