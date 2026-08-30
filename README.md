@@ -2,6 +2,10 @@
 
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/tui-tools/tui-secure/badge)](https://scorecard.dev/viewer/?uri=github.com/tui-tools/tui-secure)
 
+> **Beta.** Beta: the family is days old and still changing. Package names,
+> flags and keys may move without notice until 1.0. Pin versions, and report
+> what breaks.
+
 One screen for the security posture of one Linux machine. Eight probes — Secure
 Boot, the MAC layer, the firewall, sshd, pending updates, accounts, kernel
 hardening and listening ports — each answered `ok`, `warn`, `bad` or `unknown`,
@@ -124,7 +128,7 @@ Upgrades then arrive with the rest of your system updates.
 ### Any distribution, static binary
 
 ```sh
-curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.1.1/tui-secure_0.1.1_linux_amd64.tar.gz | tar -xz tui-secure
+curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.1.2/tui-secure_0.1.2_linux_amd64.tar.gz | tar -xz tui-secure
 sudo install -m0755 tui-secure /usr/local/bin/tui-secure
 ```
 
@@ -509,6 +513,15 @@ widgets, the config loader and the command runner shared by the whole family.
   configured package repositories. `tui-secure` itself opens no connection.
 - `tui-secure` re-reads a probe after every change, so what you see is what the
   system reports, not what the tool assumed.
+
+## Contributing
+
+Contributions arrive as pull requests, and the guide the whole family follows is
+[CONTRIBUTING.md](https://github.com/tui-tools/tui-kit/blob/main/CONTRIBUTING.md)
+in tui-kit: it covers the branch, the checks a change has to pass and how the
+commits are written. A vulnerability goes to
+[SECURITY.md](https://github.com/tui-tools/tui-kit/blob/main/SECURITY.md)
+instead, never into a public issue.
 
 ## License
 

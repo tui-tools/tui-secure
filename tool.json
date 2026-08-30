@@ -263,7 +263,7 @@
     "no_network": false,
     "no_network_note": "The update probe runs the distribution's own update check (`checkupdates`, `apt-get -s upgrade`, `dnf check-update`), which contacts the configured package repositories. tui-secure itself opens no connection.",
     "static_binary": true,
-    "signed_releases": false,
+    "signed_releases": true,
     "config_paths": [
       "/etc/tui-secure/config.toml",
       "~/.config/tui-secure/config.toml"

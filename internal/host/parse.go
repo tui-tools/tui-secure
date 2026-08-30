@@ -379,11 +379,12 @@ func ParseSS(out string) []Listener {
 // split: an IPv6 address is bracketed, and an interface-scoped wildcard is
 // written "0.0.0.0%virbr0:67".
 func splitAddressPort(local string) (address, port string) {
-	i := strings.LastIndexByte(local, ':')
-	if i < 0 {
-		return local, ""
+	address = local
+	if i := strings.LastIndexByte(local, ':'); i >= 0 {
+		address, port = local[:i], local[i+1:]
 	}
-	address, port = local[:i], local[i+1:]
+	// The brackets and the scope go whether or not a port was found: a line
+	// ss truncated is still a line the probe reports an address from.
 	address = strings.Trim(address, "[]")
 	if scope := strings.IndexByte(address, '%'); scope >= 0 {
 		address = address[:scope]
