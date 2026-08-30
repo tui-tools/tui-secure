@@ -1,5 +1,7 @@
 <img src="assets/logo.png" alt="tui-secure" width="240">
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/tui-tools/tui-secure/badge)](https://scorecard.dev/viewer/?uri=github.com/tui-tools/tui-secure)
+
 One screen for the security posture of one Linux machine. Eight probes — Secure
 Boot, the MAC layer, the firewall, sshd, pending updates, accounts, kernel
 hardening and listening ports — each answered `ok`, `warn`, `bad` or `unknown`,

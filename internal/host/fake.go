@@ -237,6 +237,8 @@ btrfs-progs 6.16-1 -> 6.17-1
 zstd 1.5.7-2 -> 1.5.7-3
 vim 9.1.1700-1 -> 9.1.1750-1`
 
+	//nolint:gosec // an /etc/passwd sample: the x is the placeholder that says
+	// the hash lives in /etc/shadow, so there is no credential here
 	demoPasswd = `root:x:0:0:Super User:/root:/bin/bash
 backup:x:0:0:Backup operator:/var/backups:/bin/bash`
 
