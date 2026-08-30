@@ -25,7 +25,7 @@ answer looks like for each. `tui-secure` puts them on one screen, in the
 ### Any distribution, static binary
 
 ```sh
-curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v{version}/tui-secure_{version}_linux_amd64.tar.gz | tar -xz tui-secure
+curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.1.0/tui-secure_0.1.0_linux_amd64.tar.gz | tar -xz tui-secure
 sudo install -m0755 tui-secure /usr/local/bin/tui-secure
 ```
 
