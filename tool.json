@@ -97,7 +97,10 @@
         }
       ],
       "tested": [
-        "257"
+        "255",
+        "257",
+        "259",
+        "261"
       ]
     },
     {
@@ -126,7 +129,10 @@
         }
       ],
       "tested": [
-        "9.9"
+        "9.6",
+        "9.9",
+        "10.2",
+        "10.5"
       ]
     },
     {
@@ -148,7 +154,9 @@
           "impact": "`ufw status verbose` prints no default policy line, so the incoming and outgoing policies are reported as unknown and only the active state is judged"
         }
       ],
-      "tested": []
+      "tested": [
+        "0.36.2"
+      ]
     },
     {
       "name": "firewalld",
@@ -163,7 +171,8 @@
         "/bin/firewall-cmd"
       ],
       "tested": [
-        "2.3.2"
+        "2.3.2",
+        "2.4.4"
       ]
     },
     {

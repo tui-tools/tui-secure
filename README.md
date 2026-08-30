@@ -306,7 +306,7 @@ hidden; one below the minimum is marked as such and the tool still runs.
 | Binary | `systemctl` |
 | Version read with | `systemctl --version` |
 | Minimum | 245 |
-| Tested | `257` |
+| Tested | `255`, `257`, `259`, `261` |
 | Version-gated features | `journal-grep` (since 246) |
 
 | Versions | What changes |
@@ -320,7 +320,7 @@ hidden; one below the minimum is marked as such and the tool still runs.
 | Binary | `sshd` |
 | Version read with | `ssh -V` |
 | Minimum | 8.2 |
-| Tested | `9.9` |
+| Tested | `9.6`, `9.9`, `10.2`, `10.5` |
 | Version-gated features | `sshd-test-config` (since 8.2) |
 
 | Versions | What changes |
@@ -334,7 +334,7 @@ hidden; one below the minimum is marked as such and the tool still runs.
 | Binary | `ufw` |
 | Version read with | `ufw --version` |
 | Minimum | 0.36 |
-| Tested | none yet |
+| Tested | `0.36.2` |
 
 | Versions | What changes |
 | --- | --- |
@@ -347,7 +347,7 @@ hidden; one below the minimum is marked as such and the tool still runs.
 | Binary | `firewall-cmd` |
 | Version read with | `firewall-cmd --version` |
 | Minimum | 0.9 |
-| Tested | `2.3.2` |
+| Tested | `2.3.2`, `2.4.4` |
 
 ### sbctl
 

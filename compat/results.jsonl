@@ -1,3 +1,12 @@
 {"backend":"systemd","date":"2026-08-30","distro":"fedora-42","result":"pass","suite":"smoke","tool":"tui-secure","version":"257"}
 {"backend":"openssh","date":"2026-08-30","distro":"fedora-42","result":"pass","suite":"smoke","tool":"tui-secure","version":"9.9"}
 {"backend":"firewalld","date":"2026-08-30","distro":"fedora-42","result":"pass","suite":"smoke","tool":"tui-secure","version":"2.3.2"}
+{"backend": "systemd", "date": "2026-08-30", "distro": "fedora-44", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "259"}
+{"backend": "openssh", "date": "2026-08-30", "distro": "fedora-44", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "10.2"}
+{"backend": "firewalld", "date": "2026-08-30", "distro": "fedora-44", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "2.4.4"}
+{"backend": "systemd", "date": "2026-08-30", "distro": "omarchy-server-4.0.1", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "261"}
+{"backend": "openssh", "date": "2026-08-30", "distro": "omarchy-server-4.0.1", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "10.5"}
+{"backend": "ufw", "date": "2026-08-30", "distro": "omarchy-server-4.0.1", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "0.36.2"}
+{"backend": "systemd", "date": "2026-08-30", "distro": "ubuntu-24.04", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "255"}
+{"backend": "openssh", "date": "2026-08-30", "distro": "ubuntu-24.04", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "9.6"}
+{"backend": "ufw", "date": "2026-08-30", "distro": "ubuntu-24.04", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "0.36.2"}
