@@ -38,6 +38,7 @@ func defaults() map[string]string {
 type options struct {
 	demo        bool
 	check       bool
+	report      bool
 	themePath   string
 	sudo        string
 	showVersion bool
@@ -56,6 +57,7 @@ func parseFlags(args []string, out *os.File) (options, error) {
 	fs.BoolVar(&opts.check, "check", false,
 		"run every probe and print the posture as JSON, then exit (no UI, no "+
 			"changes); the verdict travels in the `worst` field, not the exit code")
+	fs.BoolVar(&opts.report, "report", false, reportUsage)
 	fs.StringVar(&opts.themePath, "theme", "",
 		"path to an Omarchy-style colors.toml (overrides the config file)")
 	fs.StringVar(&opts.sudo, "sudo", "",
@@ -108,6 +110,24 @@ func run(args []string) error {
 	}
 	applyOverrides(&cfg, opts)
 
+	// The configured theme is handed to the kit through the same variable the
+	// user could set by hand, so precedence stays in one place. It is set
+	// before the backend is built so --report can name the theme the UI would
+	// have used even on a machine where no backend can be.
+	if path := cfg.Theme(); path != "" {
+		if err := os.Setenv("TUI_THEME", path); err != nil {
+			return err
+		}
+	}
+
+	// --report is the non-interactive path that must work everywhere. It runs
+	// no probe and needs no privilege, and it comes before the backend is
+	// required: a machine the tool cannot build a backend for is a machine
+	// whose bug report still has to be filable.
+	if opts.report {
+		return runReport(cfg, opts, os.Stdout)
+	}
+
 	// The backends are probed once, before the first read: which version of
 	// ufw, sshd or systemd this machine runs is a fact the header shows and
 	// the compatibility block is judged against.
@@ -122,14 +142,6 @@ func run(args []string) error {
 	// starts a terminal program.
 	if opts.check {
 		return runCheck(backend, backends, os.Stdout)
-	}
-
-	// The configured theme is handed to the kit through the same variable the
-	// user could set by hand, so precedence stays in one place.
-	if path := cfg.Theme(); path != "" {
-		if err := os.Setenv("TUI_THEME", path); err != nil {
-			return err
-		}
 	}
 
 	program := tea.NewProgram(newApp(backend, theme.New(), backends),
