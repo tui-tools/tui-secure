@@ -259,6 +259,7 @@ means *nobody answered*, and the probe says who did not.
 tui-secure                        # probe this machine
 tui-secure --demo                 # sample machine, no privileges needed
 tui-secure --check                # run every probe, print JSON, exit
+tui-secure --report               # print what a bug report needs, exit
 tui-secure --theme ~/mytheme/colors.toml
 tui-secure --sudo ""              # run the commands directly (as root)
 tui-secure --version
@@ -302,6 +303,47 @@ code useless for both, so a script reads the field.
 [tui-lab](https://github.com/tui-tools/tui-lab) uses `--check` to test this
 tool against real machines on Ubuntu, Fedora and Omarchy Server; the assertions
 live in [`test/smoke.sh`](test/smoke.sh).
+
+### `--report`, for bug reports
+
+`--report` prints, in one block, everything a maintainer has to ask for
+otherwise: the tool and kit versions, the version of every program this tool
+probes and which of them the machine does not have, the distribution, the
+kernel, the terminal, the theme, the escalation prefix, and whether the running
+binary came from a package. It needs no privileges and runs no probe, so it
+works on the machine where the bug is — including one where the tool cannot
+even build its backend, which is itself worth reporting.
+
+```console
+$ tui-secure --report
+tui-secure 0.1.0 (kit v0.2.9)
+backend: host (version unknown: the machine itself, so there is no one version to read)
+mode: live
+distro: fedora 42 (Fedora Linux 42 (Workstation Edition))
+kernel: 6.19.14-108.fc42.x86_64
+arch: x86_64
+locale: en_US.UTF-8
+term: xterm-256color
+theme: tokyo-night
+sudo: sudo -n
+root: no
+binary: /usr/bin/tui-secure (packaged)
+backends: systemd 257, openssh 9.9, ufw absent, firewalld 2.3.2, sbctl absent
+```
+
+The backend is the machine itself, so it has no version of its own; the
+programs behind the probes each have one, and the `backends` line carries them
+all — including the ones that are absent, because a probe that says nothing
+about ufw on a machine without ufw is right, and on a machine with it is a bug.
+
+The block is written to be published as it is: it carries no hostname, user
+name, home path or address, and no environment variable beyond `LANG`,
+`LC_ALL`, `TERM` and `TERM_PROGRAM`. A binary living under your home directory
+is reported as being there without naming the path. `--report` works with
+`--demo` too, where it says so on the `mode` line.
+
+The bug form asks for this block first — see
+[`.github/ISSUE_TEMPLATE/bug_report.yml`](.github/ISSUE_TEMPLATE/bug_report.yml).
 
 ## Keys
 
