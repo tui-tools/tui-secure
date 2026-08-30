@@ -19,7 +19,7 @@ body:
     attributes:
       label: Versions
       description: |
-        Output of `tui-template --version`, your distribution and release, and the
+        Output of `tui-secure --version`, your distribution and release, and the
         version of the command the tool drives.
       render: shell
     validations:
@@ -38,4 +38,4 @@ body:
     attributes:
       label: Does it reproduce in demo mode?
       options:
-        - label: I tried `tui-template --demo`
+        - label: I tried `tui-secure --demo`

@@ -1,8 +1,8 @@
-// Package tuitemplate exists for one reason: to embed the repository's
+// Package tuisecure exists for one reason: to embed the repository's
 // tool.json into the binary.
 //
 // The manifest is the family's single source of truth about a tool. Since it
-// also carries the `backends[]` block — which version of the backend is the
+// also carries the `backends[]` block — which version of each backend is the
 // minimum, which ones have been tested, what changes on the old ones — the
 // running binary reads it too, and no version number has to be written into
 // the code. go:embed cannot reach outside its own package directory, so the
@@ -10,7 +10,7 @@
 //
 // Keep this file when you start a tool from the template: rename the package
 // after your tool and leave everything else as it is.
-package tuitemplate
+package tuisecure
 
 import _ "embed"
 

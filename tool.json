@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "name": "tui-template",
-  "binary": "tui-template",
-  "tagline": "A working skeleton for a new tui-tools tool",
-  "description": "The starting point for a new tool in the family. Press **Use this template**, rename it, replace one package, and you have a tool that looks and behaves like the rest.\n\nIt is not a pile of TODOs: it is a working tool. It lists the files in a directory and can update a file's timestamp, which is deliberately trivial — what matters is the shape around it, and that shape is already correct: the action table that generates the key map, the help screen and the confirm dialog; the backend interface with a real and a fake implementation; `--demo`; CI; and GoReleaser.\n\nThis `tool.json` is itself the example. It is a valid manifest, validated against [the schema](https://github.com/tui-tools/tui-kit/blob/main/schema/tool.schema.json) on every CI run, and the values are the ones you replace.",
-  "category": "template",
-  "homepage": "https://github.com/tui-tools/tui-template",
-  "repo": "https://github.com/tui-tools/tui-template",
+  "name": "tui-secure",
+  "binary": "tui-secure",
+  "tagline": "The machine's security posture, with the command behind every verdict",
+  "description": "A terminal UI for the security posture of one Linux machine. Eight probes — Secure Boot, the MAC layer, the firewall, sshd, pending updates, accounts, kernel hardening and listening ports — each answered `ok`, `warn`, `bad` or `unknown`, with a score across the lot.\n\nEvery verdict shows its work. Open a probe and you get the exact command that was run, the line it judged, the full raw output underneath, and a fix that names either the sibling tool that owns the change (`tui-firewall`, `tui-update`) or the command to run yourself.\n\nIt reads first and asks second. Nothing escalates beyond `sudo -n`, which never prompts, so a probe that needs root it cannot get degrades to `unknown` with the reason instead of hanging on a password. Three fixes are offered inline — enabling ufw, setting one kernel hardening key with its drop-in, enabling the update timer — and each is previewed as the exact command line and confirmed first.\n\nRun `tui-secure --demo` to drive a sample machine: every key works, every command is built and previewed for real, and nothing touches your system.",
+  "category": "security",
+  "homepage": "https://github.com/tui-tools/tui-secure",
+  "repo": "https://github.com/tui-tools/tui-secure",
   "license": "MIT",
   "platforms": [
     "linux/amd64",
@@ -16,30 +16,50 @@
   "logo": "assets/logo.png",
   "screenshots": [
     {
-      "path": "docs/screenshots/tui-template-main.png",
-      "caption": "The list: the four bands every tool in the family draws"
+      "path": "docs/screenshots/tui-secure-main.png",
+      "caption": "The posture: one row per probe, its verdict, and the score across all of them"
     },
     {
-      "path": "docs/screenshots/tui-template-touch.png",
-      "caption": "The confirm dialog, showing the exact command line before it runs"
+      "path": "docs/screenshots/tui-secure-ssh.png",
+      "caption": "The sshd probe in full: the settings it judged, the command it read them with, and the raw output"
     },
     {
-      "path": "docs/screenshots/tui-template-help.png",
-      "caption": "The help screen, generated from the action table"
+      "path": "docs/screenshots/tui-secure-updates.png",
+      "caption": "Pending updates, whether a reboot is needed, and the state of the unattended update timer"
+    },
+    {
+      "path": "docs/screenshots/tui-secure-fix.png",
+      "caption": "A fix, previewed: setting one kernel hardening key and the drop-in that makes it persist"
+    },
+    {
+      "path": "docs/screenshots/tui-secure-filter.png",
+      "caption": "Filtering the probes by name, verdict or summary"
+    },
+    {
+      "path": "docs/screenshots/tui-secure-help.png",
+      "caption": "The help screen, generated from the same key table as the hint bar"
     }
   ],
   "keys": [
     {
-      "key": "t",
-      "action": "Touch the selected file"
+      "key": "enter",
+      "action": "Open the probe: evidence, raw output and the fix"
+    },
+    {
+      "key": "a",
+      "action": "Apply an offered fix, previewed and confirmed first"
+    },
+    {
+      "key": "r",
+      "action": "Re-run every probe"
+    },
+    {
+      "key": "R",
+      "action": "Re-run the selected probe"
     },
     {
       "key": "/",
-      "action": "Filter the list"
-    },
-    {
-      "key": "r / ctrl+r",
-      "action": "Re-read the directory"
+      "action": "Filter the probes by name, verdict or summary"
     },
     {
       "key": "?",
@@ -52,84 +72,185 @@
   ],
   "backends": [
     {
-      "name": "coreutils",
-      "binary": "touch",
+      "name": "systemd",
+      "binary": "systemctl",
       "versionCommand": [
-        "touch",
+        "systemctl",
         "--version"
       ],
-      "versionRegex": "coreutils\\) ([0-9][0-9.]*)",
-      "minimum": "8.0",
+      "versionRegex": "systemd ([0-9]+)",
+      "minimum": "245",
       "searchPaths": [
-        "/usr/bin/touch",
-        "/bin/touch"
+        "/usr/bin/systemctl",
+        "/bin/systemctl"
       ],
       "features": [
         {
-          "name": "no-dereference",
-          "since": "8.1"
+          "name": "journal-grep",
+          "since": "246"
         }
       ],
       "notes": [
         {
-          "range": "<8.1",
-          "impact": "`touch -h` is missing, so the timestamp of a symlink is set on its target instead of on the link"
+          "range": "<246",
+          "impact": "`journalctl --grep` does not exist, so the denial and failed-login counts are read by filtering the journal here instead of in journalctl, which is slower on a large journal"
         }
-      ]
+      ],
+      "tested": []
+    },
+    {
+      "name": "openssh",
+      "binary": "sshd",
+      "versionCommand": [
+        "ssh",
+        "-V"
+      ],
+      "versionRegex": "OpenSSH_([0-9]+\\.[0-9]+)",
+      "minimum": "8.2",
+      "searchPaths": [
+        "/usr/bin/ssh",
+        "/bin/ssh"
+      ],
+      "features": [
+        {
+          "name": "sshd-test-config",
+          "since": "8.2"
+        }
+      ],
+      "notes": [
+        {
+          "range": "<8.2",
+          "impact": "`sshd -T` predates several of the keywords this probe reads, so the settings come from parsing sshd_config and its drop-ins instead, which does not resolve Match blocks"
+        }
+      ],
+      "tested": []
+    },
+    {
+      "name": "ufw",
+      "binary": "ufw",
+      "versionCommand": [
+        "ufw",
+        "--version"
+      ],
+      "versionRegex": "ufw ([0-9][0-9.]*)",
+      "minimum": "0.36",
+      "searchPaths": [
+        "/usr/sbin/ufw",
+        "/sbin/ufw"
+      ],
+      "notes": [
+        {
+          "range": "<0.36",
+          "impact": "`ufw status verbose` prints no default policy line, so the incoming and outgoing policies are reported as unknown and only the active state is judged"
+        }
+      ],
+      "tested": []
+    },
+    {
+      "name": "firewalld",
+      "binary": "firewall-cmd",
+      "versionCommand": [
+        "firewall-cmd",
+        "--version"
+      ],
+      "minimum": "0.9",
+      "searchPaths": [
+        "/usr/bin/firewall-cmd",
+        "/bin/firewall-cmd"
+      ],
+      "tested": []
+    },
+    {
+      "name": "sbctl",
+      "binary": "sbctl",
+      "versionCommand": [
+        "sbctl",
+        "version"
+      ],
+      "versionRegex": "([0-9]+\\.[0-9]+(\\.[0-9]+)?)",
+      "searchPaths": [
+        "/usr/bin/sbctl",
+        "/bin/sbctl"
+      ],
+      "notes": [
+        {
+          "range": ">=0.1",
+          "impact": "sbctl is optional: without it the Secure Boot probe reports what `bootctl status` knows and says nothing about enrolled keys or signed files"
+        }
+      ],
+      "tested": []
     }
   ],
   "install": {
-    "source": {
-      "available": true,
-      "command": "git clone https://github.com/tui-tools/tui-template\ncd tui-template && make demo",
-      "url": "https://github.com/tui-tools/tui-template",
-      "note": "Or press \"Use this template\" on GitHub, which is the point of it."
-    },
     "pacman": {
       "available": false,
-      "package": "tui-template",
+      "package": "tui-secure",
       "repo": "tui-tools",
       "requires_repo_setup": true,
-      "command": "sudo pacman -S tui-template",
+      "command": "sudo pacman -S tui-secure",
       "url": "https://pkgs.tui.tools/arch",
-      "note": "The template is never packaged. This entry shows your tool's shape."
+      "note": "Add the tui-tools repository to pacman.conf first."
+    },
+    "aur": {
+      "available": false,
+      "package": "tui-secure-bin",
+      "repo": "aur",
+      "command": "paru -S tui-secure-bin",
+      "url": "https://aur.archlinux.org/packages/tui-secure-bin",
+      "note": "The -bin package installs the released static binary."
     },
     "apt": {
       "available": false,
-      "package": "tui-template",
+      "package": "tui-secure",
       "repo": "tui-tools",
       "requires_repo_setup": true,
-      "command": "sudo apt install tui-template",
+      "command": "sudo apt install tui-secure",
       "url": "https://pkgs.tui.tools/deb",
-      "note": "The template is never packaged. This entry shows your tool's shape."
+      "note": "Add the tui-tools apt repository and its keyring first."
     },
     "dnf": {
       "available": false,
-      "package": "tui-template",
+      "package": "tui-secure",
       "repo": "tui-tools",
       "requires_repo_setup": true,
-      "command": "sudo dnf install tui-template",
+      "command": "sudo dnf install tui-secure",
       "url": "https://pkgs.tui.tools/rpm",
-      "note": "The template is never packaged. This entry shows your tool's shape."
+      "note": "Add the tui-tools.repo file first."
+    },
+    "zypper": {
+      "available": false,
+      "package": "tui-secure",
+      "repo": "tui-tools",
+      "requires_repo_setup": true,
+      "command": "sudo zypper install tui-secure",
+      "url": "https://pkgs.tui.tools/rpm",
+      "note": "Add the tui-tools repository first."
     },
     "binary": {
-      "available": false,
-      "pattern": "tui-template_{version}_linux_{arch}.tar.gz",
-      "command": "curl -fsSL https://github.com/tui-tools/tui-template/releases/download/v{version}/tui-template_{version}_linux_{arch}.tar.gz | tar -xz tui-template\nsudo install -m0755 tui-template /usr/local/bin/tui-template",
-      "url": "https://github.com/tui-tools/tui-template/releases",
-      "note": "The template is never released. Your tool is, once you tag v0.1.0."
+      "available": true,
+      "pattern": "tui-secure_{version}_linux_{arch}.tar.gz",
+      "command": "curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v{version}/tui-secure_{version}_linux_{arch}.tar.gz | tar -xz tui-secure\nsudo install -m0755 tui-secure /usr/local/bin/tui-secure",
+      "url": "https://github.com/tui-tools/tui-secure/releases",
+      "note": "One static binary. Verify it against checksums.txt from the same release."
+    },
+    "source": {
+      "available": true,
+      "command": "git clone https://github.com/tui-tools/tui-secure\ncd tui-secure && make build\nsudo install -m0755 bin/tui-secure /usr/local/bin/tui-secure",
+      "url": "https://github.com/tui-tools/tui-secure",
+      "note": "Needs Go 1.27 or newer."
     }
   },
   "security": {
-    "needs_sudo": "Only the touch action escalates, and only when the configured prefix is non-empty. Listing a directory is an ordinary read. Replace this sentence with what your own tool escalates for.",
+    "needs_sudo": "Most probes read unprivileged. Escalation is `sudo -n`, which never prompts: it covers the reads only root can do (`ufw status`, `sshd -T`, /etc/shadow, `sudo -l`, the nftables ruleset) and the three offered fixes. A probe that cannot escalate reports unknown with the reason.",
     "preview_before_run": true,
     "no_daemon": true,
-    "no_network": true,
+    "no_network": false,
+    "no_network_note": "The update probe runs the distribution's own update check (`checkupdates`, `apt-get -s upgrade`, `dnf check-update`), which contacts the configured package repositories. tui-secure itself opens no connection.",
     "static_binary": true,
     "signed_releases": false,
     "config_paths": [
-      "/etc/tui-template/config.toml",
-      "~/.config/tui-template/config.toml"
+      "/etc/tui-secure/config.toml",
+      "~/.config/tui-secure/config.toml"
     ]
   },
   "maintainers": [
@@ -138,12 +259,19 @@
       "github": "edimarlnx"
     }
   ],
-  "since": "2026-08-29",
+  "since": "2026-08-30",
   "keywords": [
-    "template",
-    "scaffold",
-    "bubbletea",
-    "starter"
-  ],
-  "unreleased": true
+    "security",
+    "hardening",
+    "posture",
+    "secure-boot",
+    "selinux",
+    "apparmor",
+    "firewall",
+    "sshd",
+    "updates",
+    "sysctl",
+    "tui",
+    "bubbletea"
+  ]
 }
