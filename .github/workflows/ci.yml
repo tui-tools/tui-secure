@@ -175,7 +175,10 @@ jobs:
       # bump the version here when golang/vuln cuts a release.
       - name: govulncheck
         env:
-          GOVULNCHECK_VERSION: "v1.1.4"
+          # v1.1.4, the version the template pins, panics on any module
+          # built with Go 1.27 ("unexpected expr: *ast.KeyValueExpr"). This
+          # is the current release; the template is what needs the same bump.
+          GOVULNCHECK_VERSION: "v1.7.0"
         run: |
           go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
           govulncheck ./...
