@@ -17,7 +17,7 @@ import (
 // fixture reads a captured output file.
 func fixture(t *testing.T, name string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", name))
+	raw, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec // the name is a literal in the test above, and testdata is in the repository
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
