@@ -1,0 +1,16 @@
+FedoraWorkstation (default, active)
+  target: default
+  ingress-priority: 0
+  egress-priority: 0
+  icmp-block-inversion: no
+  interfaces: br-demo br-demo br-demo br-demo br-demo enp44s0 vpn0 vpn0 vpn0 vpn0 vpn0 wlo1
+  sources: 
+  services: dhcpv6-client mdns samba-client ssh
+  ports: 1025-65535/udp 1025-65535/tcp
+  protocols: 
+  forward: yes
+  masquerade: yes
+  forward-ports: 
+  source-ports: 
+  icmp-blocks: 
+  rich rules: 

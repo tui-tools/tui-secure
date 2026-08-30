@@ -1,0 +1,1 @@
+{"version":"2","profiles":{"/usr/bin/man":"enforce","/usr/sbin/cups-browsed":"enforce","/usr/lib/snapd/snap-confine":"enforce","lsb_release":"complain","nvidia_modprobe":"unconfined"},"processes":{"/usr/sbin/cups-browsed":[{"profile":"/usr/sbin/cups-browsed","pid":"812","status":"enforce"}]}}

@@ -1,0 +1,51 @@
+Failed to read "/boot/efi/EFI/systemd": Permission denied
+Failed to open '/boot/efi//loader/loader.conf': Permission denied
+System:
+      Firmware: n/a (n/a)
+ Firmware Arch: x64
+   Secure Boot: enabled (deployed)
+  TPM2 Support: yes
+  Measured UKI: no
+  Boot into FW: supported
+
+Current Boot Loader:
+      Product: GRUB 2.12
+     Features: ✗ Boot counting
+               ✗ Menu timeout control
+               ✗ One-shot menu timeout control
+               ✗ Default entry control
+               ✗ One-shot entry control
+               ✗ Support for XBOOTLDR partition
+               ✗ Support for passing random seed to OS
+               ✗ Load drop-in drivers
+               ✗ Support Type #1 sort-key field
+               ✗ Support @saved pseudo-entry
+               ✗ Support Type #1 devicetree field
+               ✗ Enroll SecureBoot keys
+               ✗ Retain SHIM protocols
+               ✗ Menu can be disabled
+               ✗ Multi-Profile UKIs are supported
+               ✓ Boot loader set partition information
+    Partition: /dev/disk/by-partuuid/00000000-0000-4000-8000-000000000000
+
+Random Seed:
+ System Token: not set
+       Exists: no
+
+Available Boot Loaders on ESP:
+          ESP: /boot/efi (/dev/disk/by-partuuid/00000000-0000-4000-8000-000000000000)
+         File: (can't access /boot/efi: Permission denied)
+
+Boot Loaders Listed in EFI Variables:
+        Title: Fedora
+           ID: 0x0004
+       Status: active, boot-order
+    Partition: /dev/disk/by-partuuid/00000000-0000-4000-8000-000000000000
+         File: └─/EFI/fedora/shimx64.efi
+
+        Title: Windows Boot Manager
+           ID: 0x0000
+       Status: active, boot-order
+    Partition: /dev/disk/by-partuuid/dc77d035-9cb8-4e5b-be5a-82bd59f15e01
+         File: └─/EFI/Microsoft/Boot/bootmgfw.efi
+

@@ -1,0 +1,12 @@
+# The distribution's file, with a drop-in that overrides it.
+Include /etc/ssh/sshd_config.d/*.conf
+
+Port 22
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+MaxAuthTries 3
+X11Forwarding no
+
+Match User deploy
+    PasswordAuthentication yes

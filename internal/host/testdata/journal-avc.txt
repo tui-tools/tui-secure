@@ -1,0 +1,3 @@
+Aug 30 08:41:02 lab kernel: audit: type=1400 audit(1756540862.101:214): avc:  denied  { read } for  pid=1841 comm="nginx" name="secret.conf" dev="dm-0" ino=51
+Aug 30 09:02:55 lab kernel: audit: type=1400 audit(1756542175.442:215): avc:  denied  { write } for  pid=1902 comm="backup" name="spool" dev="dm-0" ino=77
+Aug 30 11:17:31 lab kernel: audit: type=1400 audit(1756550251.900:216): avc:  denied  { open } for  pid=2044 comm="nginx" name="index.html" dev="dm-0" ino=93

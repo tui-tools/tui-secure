@@ -1,0 +1,15 @@
+port 22
+addressfamily any
+listenaddress 0.0.0.0:22
+usepam yes
+logingracetime 120
+permitrootlogin yes
+maxauthtries 10
+maxsessions 10
+pubkeyauthentication yes
+passwordauthentication yes
+kbdinteractiveauthentication no
+x11forwarding yes
+printmotd no
+acceptenv LANG
+subsystem sftp /usr/lib/openssh/sftp-server

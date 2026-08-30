@@ -1,0 +1,30 @@
+udp UNCONN 0      0                                          0.0.0.0:58115 0.0.0.0:* users:(("wsdd",pid=13591,fd=32))              
+udp UNCONN 0      0                                          0.0.0.0:58285 0.0.0.0:* users:(("wsdd",pid=13591,fd=117))             
+udp UNCONN 0      0                                          0.0.0.0:59004 0.0.0.0:* users:(("wsdd",pid=13591,fd=8))               
+udp UNCONN 0      0                                          0.0.0.0:59527 0.0.0.0:* users:(("wsdd",pid=13591,fd=41))              
+udp UNCONN 0      0                                    192.168.122.1:53    0.0.0.0:*                                               
+udp UNCONN 0      0                                    192.168.123.1:53    0.0.0.0:*                                               
+udp UNCONN 0      0                                       192.0.2.1:53    0.0.0.0:*                                               
+udp UNCONN 0      0                                   0.0.0.0%virbr0:67    0.0.0.0:*                                               
+udp UNCONN 0      0                                   0.0.0.0%virbr1:67    0.0.0.0:*                                               
+udp UNCONN 0      0                                0.0.0.0%zclab-br0:67    0.0.0.0:*                                               
+udp UNCONN 0      0                                        127.0.0.1:323   0.0.0.0:*                                               
+udp UNCONN 0      0                                          0.0.0.0:35243 0.0.0.0:* users:(("wsdd",pid=13591,fd=17))              
+udp UNCONN 0      0                                   192.168.16.131:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=63))              
+udp UNCONN 0      0                                  239.255.255.250:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=61))              
+udp UNCONN 0      0                                   192.168.16.150:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=9))               
+udp UNCONN 0      0                                  239.255.255.250:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=7))               
+udp UNCONN 0      0                                    192.168.122.1:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=118))             
+udp UNCONN 0      0                                  239.255.255.250:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=116))             
+udp UNCONN 0      0                                    192.168.123.1:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=115))             
+udp UNCONN 0      0                                  239.255.255.250:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=113))             
+udp UNCONN 0      0                                       192.0.2.1:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=112))             
+udp UNCONN 0      0                                  239.255.255.250:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=110))             
+udp UNCONN 0      0                                       172.17.0.1:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=60))              
+udp UNCONN 0      0                                  239.255.255.250:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=58))              
+udp UNCONN 0      0                                       172.20.0.1:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=57))              
+udp UNCONN 0      0                                  239.255.255.250:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=55))              
+udp UNCONN 0      0                                       172.22.0.1:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=54))              
+udp UNCONN 0      0                                  239.255.255.250:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=52))              
+udp UNCONN 0      0                                       172.18.0.1:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=51))              
+udp UNCONN 0      0                                  239.255.255.250:3702  0.0.0.0:* users:(("wsdd",pid=13591,fd=49))              

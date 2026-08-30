@@ -1,0 +1,6 @@
+Matching Defaults entries for lab on lab-guest:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin
+
+User lab may run the following commands on lab-guest:
+    (ALL : ALL) NOPASSWD: ALL
+    (root) /usr/bin/systemctl restart nginx
