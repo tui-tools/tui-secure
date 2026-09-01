@@ -1,8 +1,8 @@
 // Command tui-secure is a terminal UI for the security posture of one Linux
 // machine: Secure Boot, the MAC layer, the firewall, sshd, pending updates,
 // accounts, kernel hardening and listening ports. Each probe shows the command
-// behind its verdict, and the three fixes it offers are previewed as an exact
-// command line before they run.
+// behind its verdict, and every fix it offers is previewed as an exact command
+// line before it runs.
 package main
 
 import (

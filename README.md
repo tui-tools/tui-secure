@@ -206,12 +206,12 @@ trust, and this tool would rather be argued with.
 | --- | --- | --- |
 | **Secure Boot** | `bootctl status`, and `sbctl status` where sbctl is installed | `ok` enabled · `warn` off · `bad` firmware in setup mode · `unknown` no EFI |
 | **Access control** | `getenforce` and `sestatus`, or `aa-status --json`; denials from `journalctl -k`, or `ausearch -m avc` where auditd runs | `ok` enforcing · `warn` permissive, complain-only, disabled, or no MAC layer at all |
-| **Firewall** | `ufw status verbose`, or `firewall-cmd --state` and its default zone, or the `nft` ruleset | `ok` active · `warn` a permissive default · `bad` installed and off, or nothing at all |
-| **SSH server** | `sshd -T`, falling back to `sshd_config` and its drop-ins; `systemctl is-active`; failed logins from the journal | `bad` root login with a password · `warn` passwords on, keys off, MaxAuthTries high, X11 forwarding on |
+| **Firewall** | `ufw status verbose`, or `firewall-cmd --state` and its default zone, or the `nft` ruleset and the file `nftables.service` would load | `ok` active · `warn` a permissive default · `bad` installed and off, or nothing at all |
+| **SSH server** | `sshd -T`, falling back to `sshd_config` and its drop-ins; `systemctl is-active`; failed logins from the journal | `bad` root login with a password, empty passwords permitted · `warn` passwords on, keys off, MaxAuthTries high, X11 forwarding on |
 | **Updates** | `checkupdates` / `pacman -Qu`, `apt-get -s upgrade`, `dnf check-update`; whether a reboot is owed; the unattended update timer | `ok` nothing pending · `warn` updates waiting, a reboot owed, or no timer enabled |
 | **Accounts** | `/etc/passwd` for UID 0, `/etc/shadow` for empty passwords, `sudo -n -l` for NOPASSWD | `bad` a second root or an empty password · `warn` passwordless sudo · `unknown` /etc/shadow needs root |
 | **Kernel hardening** | `sysctl -n` for `kernel.kptr_restrict`, `kernel.dmesg_restrict`, `fs.protected_*`, `fs.suid_dumpable`, `net.ipv4.ip_forward` and `kernel.core_pattern` | `ok` the basics are set · `warn` a key below the recommended value |
-| **Listening ports** | `ss -tulpnH`, with the process behind each socket | `ok` everything on loopback · `warn` sockets reachable from the network |
+| **Listening ports** | `ss -tulpnH`, with the process behind each socket and the unit it belongs to, read from `/proc/<pid>/cgroup` | `ok` everything on loopback · `warn` sockets reachable from the network |
 
 The score in the header is the weighted count: an `ok` counts whole, a `warn`
 counts half, a `bad` counts nothing. An `unknown` is counted and not weighed —
@@ -221,26 +221,52 @@ scoring a question nobody could answer would be inventing a verdict.
 
 ![Pending updates](docs/screenshots/tui-secure-updates.png)
 
-`tui-secure` measures. It changes three things, and names the owner of
-everything else: the firewall is `tui-firewall`'s, accounts are `tui-users`'s,
-`sshd_config` is `tui-ssh`'s, applying updates is `tui-update`'s. Where no tool
-owns it yet, the probe shows the command to run by hand.
+`tui-secure` measures, and it fixes the findings whose right answer is the same
+on every machine. Everything else names its owner: the whole of `sshd_config`
+is `tui-ssh`'s, accounts are `tui-users`'s, rule-by-rule firewall work is
+`tui-firewall`'s, applying updates is `tui-update`'s. Where no tool owns it yet,
+the probe shows the command to run by hand.
 
-The three it will run itself are the safe one-liners, and each is previewed as
-an exact command line and confirmed first:
+What it will run itself are the one-liners it can preview in full, and each is
+shown as an exact command line and confirmed first:
 
 | Key | What runs |
 | --- | --- |
-| `a` on the firewall probe | `ufw enable` |
+| `a` on the firewall probe | `ufw enable`, or `systemctl enable --now firewalld`, or `systemctl enable --now nftables` — whichever firewall this machine actually has |
+| `a` on the SSH probe | `sshd -t -f <staged drop-in>`, then `install -m 600 <it> /etc/ssh/sshd_config.d/50-tui-secure.conf`, then `systemctl reload sshd` |
 | `a` on the kernel probe | `install -m 644 <staged drop-in> /etc/sysctl.d/90-tui-secure.conf`, then `sysctl -w <key>=<value>` |
 | `a` on the updates probe | `systemctl enable --now <the distribution's update timer>` |
+| `a` on the ports probe | `systemctl disable --now <the unit behind the port>` |
 
 ![Setting one hardening key](docs/screenshots/tui-secure-fix.png)
 
 `y` runs the commands shown, `n` does not. There is no other path to a change:
 the UI hands the same values to the preview and to the runner, so what you read
-is what executes. The drop-in is written to a private temporary directory
-first, shown in full, and only the `install` you approved puts it in `/etc`.
+is what executes. Both drop-ins are written to a private temporary directory
+first, shown in full, and only the `install` you approved puts one in `/etc`.
+
+### The changes it refuses
+
+A fix that can lock you out of your own machine is worse than no fix, so some
+changes are refused rather than warned about:
+
+- **Turning off password authentication with no key anywhere.** Before the sshd
+  plan is built, the accounts in `/etc/passwd` are walked for an
+  `authorized_keys` with something in it. If none has one — or if the only one
+  that does is `root` and `PermitRootLogin` is going to `no` at the same time —
+  the change is refused, and the message says why. A home directory that could
+  not be *read* is not an account without a key: those are listed on the dialog
+  instead, because inventing the answer in either direction would be worse than
+  naming what could not be looked into.
+- **Turning off both authentication methods.** `PasswordAuthentication no` with
+  `PubkeyAuthentication no` is a server nothing can log in to at all.
+- **Enabling `nftables.service` with no ruleset to load.** The unit is a loader
+  for `/etc/nftables.conf` (or `/etc/sysconfig/nftables.conf`). Without that
+  file, or with one `nft -c -f` will not parse, the action is refused: a service
+  that comes up and filters nothing looks like a fix and is not one.
+
+The ssh server is also never offered as something to stop, whatever port the
+ports probe finds it on.
 
 ## `sudo -n`, or `unknown`
 
@@ -376,7 +402,9 @@ The bug form asks for this block first — see
   prompt.
 - Score the machine, and name the stack it found: Secure Boot, MAC layer,
   firewall backend, sshd and update manager.
-- Offer three fixes, previewed as exact command lines and confirmed first.
+- Offer a fix for every finding whose right answer is the same on every
+  machine, previewed as an exact command line and confirmed first — and refuse
+  the ones that would leave nothing able to log in.
 - Re-run one probe or all of them, and filter across every field.
 - Print the whole posture as JSON for a script or a test.
 - Follow the active Omarchy theme, and respect `NO_COLOR`.
@@ -516,7 +544,7 @@ program through a kit runner, and
 [`check-exec.sh`](https://github.com/tui-tools/tui-kit/blob/main/tools/check-exec.sh)
 fails the build if any other package imports `os/exec`.
 
-The three fixes are `runner.Command` values produced by the backend. The UI
+The fixes are `runner.Command` values produced by the backend. The UI
 shows them and, on confirmation, hands the same ones back to the
 [kit runner](https://github.com/tui-tools/tui-kit#the-contract-preview-confirm-run),
 which resolves the binary and the privilege prefix. That is the whole trust
@@ -549,6 +577,17 @@ widgets, the config loader and the command runner shared by the whole family.
 - The `/etc/sysctl.d/90-tui-secure.conf` drop-in is this tool's own file, and
   each line in it was agreed to once. Setting a second key keeps the first;
   removing a line and running `sudo sysctl --system` undoes it.
+- `/etc/ssh/sshd_config.d/50-tui-secure.conf` is this tool's own file too, and
+  it is regenerated in full on every change: a keyword agreed to earlier
+  survives, a keyword this tool does not own is not carried forward. It is
+  checked with `sshd -t -f` before it is installed, so a file the server would
+  refuse never reaches `/etc`. Deleting a line and running
+  `sudo systemctl reload sshd` undoes it. sshd takes the *first* value it is
+  given for a keyword, so when a drop-in sorting earlier already sets one, the
+  dialog names that file instead of quietly doing nothing.
+- Stopping the unit behind a listening port is a decision about what the
+  machine is for, not a hardening default: it is offered, never suggested, and
+  never for the ssh server.
 - The accounts probe reads `/etc/shadow` when it can. It keeps the count and
   the account names, never the hashes: nothing from that file reaches the
   screen, the `--check` output or a log.
