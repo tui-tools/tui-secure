@@ -32,10 +32,28 @@ type demoState struct {
 	kptrRestrict string
 	timerEnabled bool
 	ufwActive    bool
+	// passwordAuth is the sample sshd's PasswordAuthentication, which the sshd
+	// action turns off.
+	passwordAuth string
+	// nginxRunning is whether the sample machine still answers on port 80,
+	// which the port action stops.
+	nginxRunning bool
 }
 
 // demoTimer is the unattended update unit the sample machine has.
 const demoTimer = "omarchy-server-update.timer"
+
+// demoUnits maps the sample machine's listening processes onto the units they
+// belong to. On a real machine this comes out of /proc/<pid>/cgroup; here it is
+// written down, because the demo has no processes.
+var demoUnits = map[string]string{
+	"901":  "sshd.service",
+	"1841": "nginx.service",
+}
+
+// demoLoginPaths is the sample machine's answer to "is there a key to log in
+// with", which is what keeps the sshd action from refusing itself in --demo.
+var demoLoginPaths = LoginPath{Keys: []string{"demo"}}
 
 // NewFake builds the sample machine: Secure Boot on, SELinux enforcing with a
 // few denials, ufw active, an sshd that still takes passwords, a dozen pending
@@ -43,7 +61,10 @@ const demoTimer = "omarchy-server-update.timer"
 // left at zero, and two sockets on the network.
 func NewFake() *Fake {
 	f := &Fake{
-		state:  demoState{kptrRestrict: "0", timerEnabled: false, ufwActive: true},
+		state: demoState{
+			kptrRestrict: "0", timerEnabled: false, ufwActive: true,
+			passwordAuth: "yes", nginxRunning: true,
+		},
 		staged: map[string]string{},
 	}
 	f.run = &runner.Fake{Prefix: "sudo -n", Hook: f.apply}
@@ -81,9 +102,25 @@ func (f *Fake) apply(cmd posture.Command) (string, error) {
 		f.state.ufwActive = true
 		return "Firewall is active and enabled on system startup", nil
 	case "systemctl enable":
-		f.state.timerEnabled = true
-		return "Created symlink /etc/systemd/system/timers.target.wants/" +
-			demoTimer, nil
+		if len(argv) > 3 && argv[3] == demoTimer {
+			f.state.timerEnabled = true
+			return "Created symlink /etc/systemd/system/timers.target.wants/" +
+				demoTimer, nil
+		}
+		return "", nil
+	case "systemctl disable":
+		if len(argv) > 3 && argv[3] == "nginx.service" {
+			f.state.nginxRunning = false
+			return "Removed /etc/systemd/system/multi-user.target.wants/nginx.service", nil
+		}
+		return "", nil
+	case "systemctl reload":
+		// The reload is what makes an installed sshd drop-in true, so this is
+		// where the sample machine picks the new keywords up.
+		f.applySSHDDropIn()
+		return "", nil
+	case "sshd -t":
+		return "", nil
 	case "sysctl -w":
 		if len(argv) > 2 {
 			if _, value, ok := cutKey(argv[2]); ok {
@@ -95,6 +132,16 @@ func (f *Fake) apply(cmd posture.Command) (string, error) {
 		return "", nil
 	}
 	return "", nil
+}
+
+// applySSHDDropIn folds the staged sshd drop-in into the sample machine, which
+// is what a real reload does with the file the install just put in /etc.
+func (f *Fake) applySSHDDropIn() {
+	for key, value := range parseSSHDDropIn(f.staged[SSHDDropInPath]) {
+		if key == "passwordauthentication" {
+			f.state.passwordAuth = value
+		}
+	}
 }
 
 // Load returns the sample machine's posture.
@@ -123,8 +170,39 @@ func (f *Fake) Reload(_ context.Context, id string) (posture.Probe, error) {
 // builders. Only the staging differs: --demo writes no file, so the drop-in
 // lives in a map and the path it would have been written to is a name.
 func (f *Fake) BuildAction(probeID, actionID string) (posture.Plan, error) {
-	kind, argument, _ := strings.Cut(actionID, ":")
-	if kind != ActionSysctl {
+	kind, argument, hasArgument := strings.Cut(actionID, ":")
+	switch kind {
+	case ActionFirewalldEnable, ActionNftablesEnable:
+		if hasArgument {
+			return posture.Plan{}, fmt.Errorf("host: %q takes no argument", kind)
+		}
+	}
+
+	switch kind {
+	case ActionSSHD:
+		return f.sshdPlan(argument)
+
+	case ActionDisablePort:
+		unit, known := f.portUnits()[argument]
+		if !known {
+			return posture.Plan{}, fmt.Errorf(
+				"host: nothing on port %s was traced back to a unit this tool "+
+					"can stop; re-run the probe", argument)
+		}
+		return PortDisablePlan(argument, unit)
+
+	case ActionFirewalldEnable:
+		return FirewallEnablePlan(kind, "", "")
+
+	case ActionNftablesEnable:
+		// The sample machine runs ufw, so this never comes from its own
+		// screen. It is built from a ruleset the demo says exists, so the
+		// commands and the refusals can still be exercised without one.
+		return FirewallEnablePlan(kind, NftablesConfigPaths[0], "")
+
+	case ActionSysctl:
+		// Handled below: staging is the only thing the demo does differently.
+	default:
 		real := &Real{staged: map[string]string{}}
 		return real.BuildAction(probeID, actionID)
 	}
@@ -153,6 +231,68 @@ func (f *Fake) BuildAction(probeID, actionID string) (posture.Plan, error) {
 		Commands: []posture.Command{installCmd, setCmd},
 		Danger:   true,
 	}, nil
+}
+
+// sshdPlan builds the same plan the real backend builds for one sshd keyword,
+// from the same function. Only the staging differs: --demo writes no file, so
+// the drop-in lives in a map and the path it would have been written to is a
+// name.
+func (f *Fake) sshdPlan(name string) (posture.Plan, error) {
+	key, ok := sshdKey(name)
+	if !ok {
+		return posture.Plan{}, fmt.Errorf(
+			"host: %q is not a keyword this tool sets", name)
+	}
+	input := SSHDPlanInput{
+		Key:       key.Key,
+		Effective: ParseSSHDConfig(f.sshdOutput()),
+		Existing:  f.staged[SSHDDropInPath],
+		Unit:      "sshd",
+		Paths:     demoLoginPaths,
+	}
+	content, err := RenderSSHDDropIn(input.Existing, key.Key, key.Want)
+	if err != nil {
+		return posture.Plan{}, err
+	}
+	f.staged[SSHDDropInPath] = content
+	return SSHDPlan(input, "/tmp/tui-secure/"+SSHDDropInName)
+}
+
+// sshdOutput is what `sshd -T` would print on the sample machine now.
+func (f *Fake) sshdOutput() string {
+	return strings.Replace(demoSSHD,
+		"passwordauthentication yes",
+		"passwordauthentication "+f.state.passwordAuth, 1)
+}
+
+// portUnits maps the sample machine's network-reachable ports onto the units
+// behind them, skipping the ones this tool refuses to stop.
+func (f *Fake) portUnits() map[string]string {
+	units := map[string]string{}
+	for _, listener := range ParseSS(f.ssOutput()) {
+		unit := demoUnits[listener.PID]
+		if !listener.Global || unit == "" || protectedUnits[unit] {
+			continue
+		}
+		if _, seen := units[listener.Port]; !seen {
+			units[listener.Port] = unit
+		}
+	}
+	return units
+}
+
+// ssOutput is what `ss -tulpnH` would print on the sample machine now.
+func (f *Fake) ssOutput() string {
+	if f.state.nginxRunning {
+		return demoSS
+	}
+	var kept []string
+	for _, line := range splitLines(demoSS) {
+		if !strings.Contains(line, "nginx") {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 // probe renders one probe of the sample machine from the current state.
@@ -334,16 +474,23 @@ func (f *Fake) firewall() posture.Probe {
 	return probe
 }
 
-// ssh: running, keys allowed, and passwords still allowed too.
+// ssh: running, keys allowed, and passwords still allowed too — until the sshd
+// action turns them off, at which point the row goes green like the real one
+// would after the reload.
 func (f *Fake) ssh() posture.Probe {
-	return posture.Probe{
+	settings := ParseSSHDConfig(f.sshdOutput())
+	passwords := f.state.passwordAuth == "yes"
+
+	probe := posture.Probe{
 		ID: posture.ProbeSSH, Title: titleFor(posture.ProbeSSH),
-		Status:  posture.StatusWarn,
-		Summary: "sshd is running with password authentication on",
+		Status:  boolStatus(!passwords),
+		Summary: "sshd is running with keys only and root login off",
 		Findings: []posture.Finding{
 			{Label: "PermitRootLogin", Value: "no", Status: posture.StatusOK},
-			{Label: "PasswordAuthentication", Value: "yes", Status: posture.StatusWarn,
-				Note: "passwords are guessable; keys are not"},
+			{Label: "PasswordAuthentication", Value: f.state.passwordAuth,
+				Status: boolStatus(!passwords),
+				Note:   "passwords are guessable; keys are not"},
+			{Label: "PermitEmptyPasswords", Value: "no", Status: posture.StatusOK},
 			{Label: "PubkeyAuthentication", Value: "yes", Status: posture.StatusOK},
 			{Label: "MaxAuthTries", Value: "6", Status: posture.StatusOK},
 			{Label: "X11Forwarding", Value: "no", Status: posture.StatusOK},
@@ -355,20 +502,27 @@ func (f *Fake) ssh() posture.Probe {
 			stack("sshd: running"),
 		},
 		Evidence: []posture.Evidence{
-			{Command: "sudo -n sshd -T", Line: "passwordauthentication yes"},
+			{Command: "sudo -n sshd -T",
+				Line: "passwordauthentication " + f.state.passwordAuth},
 			{Command: `journalctl -u sshd -u ssh --since -24h --grep Failed password|Invalid user`,
 				Line: firstMatch(demoFailedLogins, "Failed password")},
 		},
-		Fix: posture.Fix{
-			Tool: "tui-ssh (planned)",
-			Hint: "Set the keywords above in a drop-in under " + sshdDropInDir +
-				", check it with `sshd -t`, then reload sshd.",
-			Command: "sudo sshd -t && sudo systemctl reload sshd",
-		},
-		Raw: "$ sudo -n sshd -T\n" + demoSSHD +
+		Raw: "$ sudo -n sshd -T\n" + f.sshdOutput() +
 			"\n\n$ journalctl -u sshd -u ssh --since -24h --grep 'Failed password|Invalid user'\n" +
 			demoFailedLogins + "\n",
 	}
+	if passwords {
+		probe.Summary = "sshd is running with password authentication on"
+		probe.Fix = posture.Fix{
+			Tool: "tui-ssh (planned)",
+			Hint: "Each keyword below can be set in " + SSHDDropInPath +
+				", checked with `sshd -t -f` and reloaded. Press a to do it " +
+				"one keyword at a time, previewed first.",
+			Command: "sudo sshd -t && sudo systemctl reload sshd",
+		}
+	}
+	probe.Actions = sshdActions(settings)
+	return probe
 }
 
 // updates: a dozen pending, a reboot owed, and nothing applying them.
@@ -498,7 +652,8 @@ func (f *Fake) kernel() posture.Probe {
 
 // ports: six sockets, two of them reachable from another machine.
 func (f *Fake) ports() posture.Probe {
-	listeners := ParseSS(demoSS)
+	out := f.ssOutput()
+	listeners := ParseSS(out)
 	probe := posture.Probe{
 		ID: posture.ProbePorts, Title: titleFor(posture.ProbePorts),
 		Status: posture.StatusWarn,
@@ -510,18 +665,30 @@ func (f *Fake) ports() posture.Probe {
 		Evidence: []posture.Evidence{
 			{Command: "sudo -n ss -tulpnH", Line: firstGlobal(listeners)},
 		},
-		Raw: "$ sudo -n ss -tulpnH\n" + demoSS + "\n",
+		Raw: "$ sudo -n ss -tulpnH\n" + out + "\n",
 	}
+	offered := map[string]bool{}
 	global := 0
 	for _, listener := range listeners {
 		if !listener.Global {
 			continue
 		}
 		global++
+		unit := demoUnits[listener.PID]
+		if unit != "" && !protectedUnits[unit] && !offered[listener.Port] {
+			offered[listener.Port] = true
+			probe.Actions = append(probe.Actions, posture.Action{
+				ID: ActionDisablePort + ":" + listener.Port,
+				Label: "Stop " + unit + " (" + listener.Proto + " port " +
+					listener.Port + ")",
+				Danger: true,
+			})
+		}
 		probe.Findings = append(probe.Findings, posture.Finding{
 			Label:  listener.Proto + " " + listener.Address + ":" + listener.Port,
 			Value:  orUnknown(listener.Process),
 			Status: posture.StatusWarn,
+			Note:   unit,
 		})
 	}
 	probe.Summary = fmt.Sprintf(

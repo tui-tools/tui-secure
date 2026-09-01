@@ -7,9 +7,10 @@ import (
 	"github.com/tui-tools/tui-secure/internal/posture"
 )
 
-// TestCommandArgvIsExact pins the three command lines this tool can run. They
-// are the whole of what tui-secure does to a machine, so a change to any of
-// them should be a change to this test as well.
+// TestCommandArgvIsExact pins the command lines the firewall, timer and sysctl
+// actions run. They are part of the whole of what tui-secure does to a machine
+// — the sshd and unit ones are pinned next door — so a change to any of them
+// should be a change to this test as well.
 func TestCommandArgvIsExact(t *testing.T) {
 	ufw, err := BuildUfwEnable()
 	if err != nil {
@@ -157,7 +158,9 @@ func TestHardeningKeysAreCoherent(t *testing.T) {
 func TestBuildActionRefusesWhatIsNotOffered(t *testing.T) {
 	backend := NewFake()
 	for _, id := range []string{"", "nonsense", "sysctl:net.ipv4.ip_forward",
-		"timer:evil.socket", "sysctl:kernel.made_up"} {
+		"timer:evil.socket", "sysctl:kernel.made_up", "sshd", "sshd:",
+		"sshd:Port", "sshd:AllowUsers", "sshd:PermitRootLogin extra",
+		"firewalld-enable:evil", "port:evil", "ufw-enable:nonsense"} {
 		if _, err := backend.BuildAction(posture.ProbeKernel, id); err == nil {
 			t.Errorf("BuildAction(%q) was accepted", id)
 		}

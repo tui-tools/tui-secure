@@ -17,9 +17,10 @@
 //     without ufw is a machine with a different firewall, or none, and both
 //     are answers.
 //
-// Almost everything here reads. The three things that write — enabling ufw,
-// setting one kernel hardening key with its drop-in, enabling the update timer
-// — are built in command.go, previewed, and run only after a confirm dialog.
+// Almost everything here reads. The things that write — turning a firewall on,
+// setting one kernel hardening key or one sshd keyword through a drop-in,
+// enabling the update timer, stopping the unit behind a port — are built in
+// command.go and sshd.go, previewed, and run only after a confirm dialog.
 package host
 
 import (
@@ -89,10 +90,23 @@ type Real struct {
 	escalated map[string]*runner.Runner
 	missing   map[string]error
 
-	// staged is the drop-in file a sysctl action has written to a private
-	// temporary directory, keyed by destination. Nothing reaches /etc until
-	// the confirmed install command runs.
+	// staged is the drop-in file a sysctl or sshd action has written to a
+	// private temporary directory, keyed by destination. Nothing reaches /etc
+	// until the confirmed install command runs.
 	staged map[string]string
+
+	// What the probes learned that an action later needs. An action is only
+	// ever offered by a probe that has just read this machine, so building the
+	// plan from that same read is what keeps the command in the dialog and the
+	// verdict on the screen talking about the same thing.
+	//
+	// sshdUnit is the ssh server's unit name (sshd, or ssh on Debian) and
+	// sshdSettingsSeen the effective configuration the ssh probe read.
+	// portUnits maps a listening port to the unit the ports probe traced it
+	// back to.
+	sshdUnit         string
+	sshdSettingsSeen map[string]string
+	portUnits        map[string]string
 }
 
 // NewReal builds the host backend. sudoPrefix comes from the configuration
@@ -109,6 +123,7 @@ func NewReal(sudoPrefix []string) (*Real, error) {
 		escalated: map[string]*runner.Runner{},
 		missing:   map[string]error{},
 		staged:    map[string]string{},
+		portUnits: map[string]string{},
 	}, nil
 }
 
