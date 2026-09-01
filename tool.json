@@ -3,7 +3,7 @@
   "name": "tui-secure",
   "binary": "tui-secure",
   "tagline": "The machine's security posture, with the command behind every verdict",
-  "description": "A terminal UI for the security posture of one Linux machine. Eight probes — Secure Boot, the MAC layer, the firewall, sshd, pending updates, accounts, kernel hardening and listening ports — each answered `ok`, `warn`, `bad` or `unknown`, with a score across the lot.\n\nEvery verdict shows its work. Open a probe and you get the exact command that was run, the line it judged, the full raw output underneath, and a fix that names either the sibling tool that owns the change (`tui-firewall`, `tui-update`) or the command to run yourself.\n\nIt reads first and asks second. Nothing escalates beyond `sudo -n`, which never prompts, so a probe that needs root it cannot get degrades to `unknown` with the reason instead of hanging on a password. Three fixes are offered inline — enabling ufw, setting one kernel hardening key with its drop-in, enabling the update timer — and each is previewed as the exact command line and confirmed first.\n\nRun `tui-secure --demo` to drive a sample machine: every key works, every command is built and previewed for real, and nothing touches your system.",
+  "description": "A terminal UI for the security posture of one Linux machine. Eight probes — Secure Boot, the MAC layer, the firewall, sshd, pending updates, accounts, kernel hardening and listening ports — each answered `ok`, `warn`, `bad` or `unknown`, with a score across the lot.\n\nEvery verdict shows its work. Open a probe and you get the exact command that was run, the line it judged, the full raw output underneath, and a fix that names either the sibling tool that owns the change (`tui-firewall`, `tui-update`) or the command to run yourself.\n\nIt reads first and asks second. Nothing escalates beyond `sudo -n`, which never prompts, so a probe that needs root it cannot get degrades to `unknown` with the reason instead of hanging on a password. The fixes it offers are the one-liners it can preview in full: turning on ufw, firewalld or nftables, setting one kernel key or one sshd keyword through a drop-in, enabling the update timer, stopping the service behind an open port. A change that would leave nothing able to log in over ssh is refused.\n\nRun `tui-secure --demo` to drive a sample machine: every key works, every command is built and previewed for real, and nothing touches your system.",
   "category": "security",
   "homepage": "https://github.com/tui-tools/tui-secure",
   "repo": "https://github.com/tui-tools/tui-secure",
@@ -257,7 +257,7 @@
     }
   },
   "security": {
-    "needs_sudo": "Most probes read unprivileged. Escalation is `sudo -n`, which never prompts: it covers the reads only root can do (`ufw status`, `sshd -T`, /etc/shadow, `sudo -l`, the nftables ruleset) and the three offered fixes. A probe that cannot escalate reports unknown with the reason.",
+    "needs_sudo": "Most probes read unprivileged. Escalation is `sudo -n`, which never prompts: it covers the reads only root can do (`ufw status`, `sshd -T`, /etc/shadow, `sudo -l`, the nftables ruleset) and the offered fixes. A probe that cannot escalate reports unknown with the reason.",
     "preview_before_run": true,
     "no_daemon": true,
     "no_network": false,
@@ -288,6 +288,7 @@
     "updates",
     "sysctl",
     "tui",
-    "bubbletea"
+    "bubbletea",
+    "ssh-hardening"
   ]
 }

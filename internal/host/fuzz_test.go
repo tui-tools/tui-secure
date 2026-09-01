@@ -313,3 +313,91 @@ func FuzzParseSudoNoPasswd(f *testing.F) {
 		}
 	})
 }
+
+// FuzzParsePasswdLoginAccounts reads the same file, for the accounts a lockout
+// guard walks looking for a key. A home directory that is not a field of the
+// input would send the key scan reading a path nobody wrote down.
+func FuzzParsePasswdLoginAccounts(f *testing.F) {
+	seed(f, "passwd-fedora42.txt", "passwd-two-roots.txt")
+	f.Fuzz(func(t *testing.T, text string) {
+		for _, account := range ParsePasswdLoginAccounts(text) {
+			for label, field := range map[string]string{
+				"name": account.Name, "home": account.Home, "shell": account.Shell,
+			} {
+				if strings.ContainsAny(field, ":\n") {
+					t.Fatalf("%s is not one passwd field: %q", label, field)
+				}
+				if !strings.Contains(text, field) {
+					t.Fatalf("%s %q is not in the input", label, field)
+				}
+			}
+			if account.Home == "" {
+				t.Fatalf("account %q has no home to look in", account.Name)
+			}
+		}
+	})
+}
+
+// FuzzParseCgroupUnit reads /proc/<pid>/cgroup, and what it returns goes
+// straight into a `systemctl disable --now` argv. A unit name that is not a
+// plain service, or one carrying anything a shell would notice, must never
+// come back.
+func FuzzParseCgroupUnit(f *testing.F) {
+	f.Add("0::/system.slice/nginx.service\n")
+	f.Add("12:name=systemd:/system.slice/postgresql.service\n")
+	f.Add("0::/user.slice/user-1000.slice/session-3.scope\n")
+	f.Add("")
+	f.Add("::")
+	f.Fuzz(func(t *testing.T, text string) {
+		unit := ParseCgroupUnit(text)
+		if unit == "" {
+			return
+		}
+		trimmed(t, "unit", unit)
+		if !serviceRe.MatchString(unit) {
+			t.Fatalf("cgroup yielded something that is not a service: %q", unit)
+		}
+		if _, err := BuildDisableUnit(unit); err != nil && !protectedUnits[unit] {
+			t.Fatalf("cgroup yielded a unit no command can be built for: %q", unit)
+		}
+	})
+}
+
+// FuzzRenderSSHDDropIn reads back the file tui-secure itself wrote last time.
+// It is the only input to a write that this tool also produced, which is
+// exactly why it is fuzzed: a file edited by hand between two runs is
+// attacker-shaped input to the next preview, and the file the dialog shows is
+// the file that gets installed.
+func FuzzRenderSSHDDropIn(f *testing.F) {
+	f.Add("PasswordAuthentication no\n")
+	f.Add("# Written by tui-secure.\n\nPermitRootLogin no\nMaxAuthTries 4\n")
+	f.Add("Port 2222\nAllowUsers root\n")
+	f.Add("")
+	f.Fuzz(func(t *testing.T, existing string) {
+		content, err := RenderSSHDDropIn(existing, "PasswordAuthentication", "no")
+		if err != nil {
+			t.Fatalf("a keyword from this package's table was refused: %v", err)
+		}
+		for _, line := range splitLines(content) {
+			trimmedLine := strings.TrimSpace(line)
+			if trimmedLine == "" || strings.HasPrefix(trimmedLine, "#") {
+				continue
+			}
+			fields := strings.Fields(trimmedLine)
+			if len(fields) != 2 {
+				t.Fatalf("the file gained a line that is not one keyword: %q", line)
+			}
+			if _, owned := sshdKey(fields[0]); !owned {
+				t.Fatalf("the file gained a keyword this tool does not own: %q",
+					fields[0])
+			}
+			if !sshdValueRe.MatchString(fields[1]) {
+				t.Fatalf("the file gained a value this tool would not write: %q",
+					fields[1])
+			}
+		}
+		if !strings.Contains(content, "PasswordAuthentication no") {
+			t.Fatalf("the keyword being set is missing:\n%s", content)
+		}
+	})
+}

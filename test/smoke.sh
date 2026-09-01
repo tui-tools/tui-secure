@@ -290,12 +290,16 @@ else
   fail=$((fail + 1))
 fi
 
-# 9. And it must not have written the one file this tool can create.
-if [[ ! -e /etc/sysctl.d/90-tui-secure.conf ]]; then
+# 9. And it must not have written either of the two files this tool can create.
+wrote=""
+for f in /etc/sysctl.d/90-tui-secure.conf /etc/ssh/sshd_config.d/50-tui-secure.conf; do
+  [[ -e "$f" ]] && wrote="$wrote $f"
+done
+if [[ -z "$wrote" ]]; then
   printf 'PASS  --check wrote no drop-in\n'
   pass=$((pass + 1))
 else
-  printf 'FAIL  /etc/sysctl.d/90-tui-secure.conf exists after a read-only run\n'
+  printf 'FAIL  %s exists after a read-only run\n' "$wrote"
   fail=$((fail + 1))
 fi
 

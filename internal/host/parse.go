@@ -2,6 +2,7 @@ package host
 
 import (
 	"encoding/json"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -342,6 +343,10 @@ type Listener struct {
 	// not see it — which is what an unprivileged read gets for other users'
 	// sockets.
 	Process string
+	// PID is the process id ss attributed the socket to, empty for the same
+	// reason Process is. It is what the unit behind a socket is looked up
+	// with.
+	PID string
 	// Global reports that the socket is reachable from outside this machine:
 	// it is not bound to a loopback address.
 	Global bool
@@ -369,6 +374,7 @@ func ParseSS(out string) []Listener {
 		}
 		if len(fields) >= 7 {
 			listener.Process = processName(fields[6])
+			listener.PID = processPID(fields[6])
 		}
 		listeners = append(listeners, listener)
 	}
@@ -415,6 +421,53 @@ func processName(field string) string {
 		return ""
 	}
 	return rest[:end]
+}
+
+// ParseCgroupUnit reads a process's /proc/<pid>/cgroup and returns the system
+// service it belongs to, or "" when it belongs to none.
+//
+// Both cgroup layouts are handled, because a machine may still be booted with
+// the v1 hierarchy: v2 writes one "0::<path>" line, v1 writes one line per
+// controller and the systemd path is the one named "name=systemd".
+//
+// Only /system.slice counts. A unit under a user slice is somebody's session,
+// a scope is a process systemd is merely supervising, and neither is a service
+// this tool would offer to disable.
+func ParseCgroupUnit(text string) string {
+	for _, line := range splitLines(text) {
+		fields := strings.Split(strings.TrimSpace(line), ":")
+		if len(fields) < 3 {
+			continue
+		}
+		path := strings.Join(fields[2:], ":")
+		if !strings.Contains(path, "/system.slice/") {
+			continue
+		}
+		segments := strings.Split(path, "/")
+		for i := len(segments) - 1; i >= 0; i-- {
+			// The name has to be one a `systemctl disable` would accept: a
+			// cgroup path is a directory name, and a directory name can hold
+			// characters a unit name cannot.
+			if serviceRe.MatchString(segments[i]) {
+				return segments[i]
+			}
+		}
+	}
+	return ""
+}
+
+// pidRe finds the process id inside ss's users:(("nginx",pid=1841,fd=6)).
+var pidRe = regexp.MustCompile(`pid=([0-9]{1,10})`)
+
+// processPID reads the first process id out of ss's users: field. Only the
+// first is taken: a socket shared by a pre-forked pool names every worker, and
+// they all belong to the same unit.
+func processPID(field string) string {
+	match := pidRe.FindStringSubmatch(field)
+	if match == nil {
+		return ""
+	}
+	return match[1]
 }
 
 // ParsePacmanUpdates counts the lines of `checkupdates` or `pacman -Qu`, which
@@ -485,6 +538,46 @@ func ParsePasswdRootAccounts(text string) []string {
 		}
 	}
 	return users
+}
+
+// Account is one login on this machine, as /etc/passwd describes it.
+type Account struct {
+	// Name is the login name.
+	Name string
+	// Home is the home directory, which is where sshd looks for the keys the
+	// account may log in with.
+	Home string
+	// Shell is the login shell.
+	Shell string
+}
+
+// nologinShells are the shells a distribution gives an account that is not
+// meant to log in at all. An account wearing one of them cannot be the way back
+// into a machine, so the lockout guard does not count it.
+var nologinShells = map[string]bool{
+	"/usr/sbin/nologin": true, "/sbin/nologin": true, "/usr/bin/nologin": true,
+	"/bin/false": true, "/usr/bin/false": true, "": true,
+}
+
+// ParsePasswdLoginAccounts returns the accounts that could log in: the ones
+// with a real shell and a home directory. It is what the ssh lockout guard
+// walks, looking for an account that holds a key.
+func ParsePasswdLoginAccounts(text string) []Account {
+	var accounts []Account
+	for _, line := range splitLines(text) {
+		fields := strings.Split(line, ":")
+		if len(fields) < 7 {
+			continue
+		}
+		shell := strings.TrimSpace(fields[6])
+		home := strings.TrimSpace(fields[5])
+		if nologinShells[shell] || home == "" || home == "/" {
+			continue
+		}
+		accounts = append(accounts, Account{
+			Name: fields[0], Home: home, Shell: shell})
+	}
+	return accounts
 }
 
 // ParseShadowEmptyPasswords returns every account in /etc/shadow whose password

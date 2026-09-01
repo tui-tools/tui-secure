@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -405,6 +406,8 @@ func (r *Real) firewalld(ctx context.Context, c *collector, probe *posture.Probe
 		probe.Summary = "firewalld is installed but not running: nothing is filtered"
 		probe.Fix.Hint = "Start firewalld, or use the firewall you replaced it with."
 		probe.Fix.Command = "sudo systemctl enable --now firewalld"
+		probe.Actions = append(probe.Actions, posture.Action{
+			ID: ActionFirewalldEnable, Label: "Enable firewalld", Danger: true})
 		probe.Findings = append(probe.Findings,
 			posture.Finding{Label: "state", Value: orUnknown(state),
 				Status: posture.StatusBad},
@@ -457,10 +460,20 @@ func (r *Real) nftables(ctx context.Context, c *collector, probe *posture.Probe)
 	}
 	rules := ParseNftRuleCount(out)
 	c.judged(preview, fmt.Sprintf("%d rule(s) in the ruleset", rules))
+	config, hasConfig := NftablesConfig()
 	if rules == 0 {
 		probe.Status = posture.StatusBad
 		probe.Summary = "the nftables ruleset is empty: nothing is filtered"
 		probe.Fix.Hint = "Load a ruleset, or install a front end that manages one."
+		// The action is only worth offering when there is a file to load.
+		// Starting nftables.service without one is a unit that comes up and
+		// filters nothing, which looks like a fix from the outside.
+		if hasConfig {
+			probe.Fix.Hint = "Enable nftables.service so it loads " + config +
+				" now and on every boot."
+			probe.Actions = append(probe.Actions, posture.Action{
+				ID: ActionNftablesEnable, Label: "Enable nftables", Danger: true})
+		}
 	} else {
 		probe.Status = posture.StatusOK
 		probe.Summary = fmt.Sprintf("a bare nftables ruleset with %d rule(s)", rules)
@@ -468,6 +481,10 @@ func (r *Real) nftables(ctx context.Context, c *collector, probe *posture.Probe)
 	probe.Findings = append(probe.Findings,
 		posture.Finding{Label: "rules", Value: strconv.Itoa(rules),
 			Status: boolStatus(rules > 0)},
+		posture.Finding{Label: "ruleset file", Value: orUnknown(config),
+			Status: boolStatus(hasConfig),
+			Note: "nftables.service loads its ruleset from " +
+				strings.Join(NftablesConfigPaths, " or ")},
 		stack("firewall: nftables"))
 }
 
@@ -525,6 +542,12 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 		}
 		return posture.StatusOK, ""
 	})
+	add("PermitEmptyPasswords", "permitemptypasswords", func(v string) (posture.Status, string) {
+		if strings.EqualFold(v, "yes") {
+			return posture.StatusBad, "an account with no password is an open door"
+		}
+		return posture.StatusOK, ""
+	})
 	add("PubkeyAuthentication", "pubkeyauthentication", func(v string) (posture.Status, string) {
 		if strings.EqualFold(v, "no") {
 			return posture.StatusWarn, "key authentication is off, leaving passwords"
@@ -578,13 +601,41 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 		yesNo(active, "running", "stopped")))
 
 	if probe.Status != posture.StatusOK {
-		probe.Fix.Hint = "Set the keywords above in a drop-in under " +
-			sshdDropInDir + ", check it with `sshd -t`, then reload sshd."
+		probe.Fix.Hint = "Each keyword below can be set in " + SSHDDropInPath +
+			", checked with `sshd -t -f` and reloaded. Press a to do it one " +
+			"keyword at a time, previewed first."
 		probe.Fix.Command = "sudo sshd -t && sudo systemctl reload " + unit
 	}
+	probe.Actions = append(probe.Actions, sshdActions(settings)...)
+
+	// The plan for a keyword is built from this read rather than from a second
+	// one, so what the dialog changes is what the screen judged.
+	r.mu.Lock()
+	r.sshdUnit, r.sshdSettingsSeen = unit, settings
+	r.mu.Unlock()
 	probe.Findings = append(probe.Findings, posture.Finding{
 		Label: "read from", Value: source, Status: posture.StatusOK})
 	return probe
+}
+
+// sshdActions offers to set every keyword this tool owns whose value on this
+// machine is one it would change. A keyword sshd did not report is left alone:
+// an empty value means the question was not answered, and writing a default
+// over a setting nobody read is how a posture tool breaks a machine.
+func sshdActions(settings map[string]string) []posture.Action {
+	var actions []posture.Action
+	for _, key := range SSHDKeys {
+		value := strings.ToLower(strings.TrimSpace(settings[strings.ToLower(key.Key)]))
+		if value == "" || !key.Weak(value) {
+			continue
+		}
+		actions = append(actions, posture.Action{
+			ID:     ActionSSHD + ":" + key.Key,
+			Label:  "Set " + key.Key + " to " + key.Want,
+			Danger: true,
+		})
+	}
+	return actions
 }
 
 // sshSummary is the one line the sshd row shows.
@@ -1165,18 +1216,63 @@ func (r *Real) probePorts(ctx context.Context) posture.Probe {
 			"%d listening socket(s), all on loopback", len(listeners))
 	}
 
+	units := map[string]string{}
 	for _, listener := range listeners {
 		if !listener.Global {
 			continue
+		}
+		unit := UnitOfPID(listener.PID)
+		note := ""
+		if unit != "" && !protectedUnits[unit] {
+			if _, seen := units[listener.Port]; !seen {
+				units[listener.Port] = unit
+				probe.Actions = append(probe.Actions, posture.Action{
+					ID: ActionDisablePort + ":" + listener.Port,
+					Label: "Stop " + unit + " (" + listener.Proto + " port " +
+						listener.Port + ")",
+					Danger: true,
+				})
+			}
+		}
+		if unit != "" {
+			note = unit
 		}
 		probe.Findings = append(probe.Findings, posture.Finding{
 			Label:  listener.Proto + " " + listener.Address + ":" + listener.Port,
 			Value:  orUnknown(listener.Process),
 			Status: posture.StatusWarn,
+			Note:   note,
 		})
 	}
+	r.mu.Lock()
+	r.portUnits = units
+	r.mu.Unlock()
 	return probe
 }
+
+// UnitOfPID names the systemd service a process belongs to, read out of its
+// cgroup. It is a file read rather than a `systemctl status <pid>`: the answer
+// is in /proc, the process is the one ss just named, and asking systemd for it
+// would be a second command for something the kernel already wrote down.
+//
+// It returns "" whenever the answer is not a plain service — a user slice, a
+// scope, a process outside systemd's tree — because a unit this tool cannot
+// name is a unit it must not offer to stop.
+func UnitOfPID(pid string) string {
+	if !pidValueRe.MatchString(pid) {
+		return ""
+	}
+	// #nosec G304 -- pid is digits only, checked above, and the path is
+	// /proc/<pid>/cgroup: a kernel file with no user-controlled component.
+	raw, err := os.ReadFile("/proc/" + pid + "/cgroup")
+	if err != nil {
+		return ""
+	}
+	return ParseCgroupUnit(string(raw))
+}
+
+// pidValueRe keeps a process id to the digits it is.
+var pidValueRe = regexp.MustCompile(`^[0-9]{1,10}$`)
 
 // firstGlobal is the first network-reachable socket, as evidence.
 func firstGlobal(listeners []Listener) string {
