@@ -2,6 +2,7 @@ package host
 
 import (
 	"encoding/json"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -400,9 +401,20 @@ func splitAddressPort(local string) (address, port string) {
 
 // globalAddress reports whether a listening address can be reached from
 // another machine.
+//
+// A dual-stack socket bound to loopback is printed by ss in IPv4-mapped form,
+// "::ffff:127.0.0.1", which is the same local-only socket wearing an IPv6
+// spelling. Unmapping before the loopback test is what keeps it from being
+// reported as network-reachable, while a mapped routable address such as
+// "::ffff:10.0.0.5" stays global.
 func globalAddress(address string) bool {
-	switch address {
-	case "127.0.0.1", "::1", "localhost":
+	if addr, err := netip.ParseAddr(address); err == nil {
+		return !addr.Unmap().IsLoopback()
+	}
+	// ss also prints things that are not addresses — "localhost" from a
+	// resolving read, "*" for a wildcard — so the textual rules stay as the
+	// fallback for whatever did not parse.
+	if address == "localhost" {
 		return false
 	}
 	return !strings.HasPrefix(address, "127.")

@@ -113,6 +113,28 @@ case "$family" in
 esac
 echo "      machine=$machine"
 
+# --- what is actually under test -------------------------------------------
+#
+# $bin defaults to whatever `tui-secure` resolves to on PATH, which on a
+# machine that has the packaged tool installed is the last release rather than
+# the build being smoked. That is how the four --report checks came to fail on
+# a host where the code was fine: the release on PATH predated the flag, so
+# every one of them failed on "flag provided but not defined" while the check
+# after them — a grep whose `|| true` swallows the same error — still passed.
+# Resolving the binary and saying which one it is turns that into one legible
+# line instead of four misleading failures.
+resolved=$(command -v "$bin" || echo "$bin")
+# The home directory is abbreviated the way --report abbreviates it: this line
+# ends up in a lab log that is kept as public evidence.
+resolved=${resolved/#$HOME/'~'}
+echo "      binary=$resolved ($("$bin" --version 2>&1 | head -1))"
+if ! "$bin" --report >/dev/null 2>&1; then
+  echo "FAIL  the binary under test does not support --report"
+  echo "      | $resolved is too old for this suite; point TUI_LAB_BIN at the"
+  echo "      | build being tested, e.g. TUI_LAB_BIN=\$PWD/bin/tui-secure"
+  exit 1
+fi
+
 # --- the report block ------------------------------------------------------
 #
 # --report is unprivileged and runs no probe, so it is smoked without sudo: a

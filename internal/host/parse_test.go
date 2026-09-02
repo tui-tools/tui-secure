@@ -245,6 +245,25 @@ udp UNCONN 0 0 0.0.0.0%virbr0:67 0.0.0.0:*`
 	}
 }
 
+// TestParseSSMappedAddresses: a dual-stack socket bound to loopback is printed
+// in IPv4-mapped form, and reading it as global would tell the operator a
+// local-only port is exposed. The mapping itself says nothing about reach, so
+// a mapped routable address is still global.
+func TestParseSSMappedAddresses(t *testing.T) {
+	out := `tcp LISTEN 0 4096 [::ffff:127.0.0.1]:8080 [::]:* users:(("java",pid=4,fd=9))
+tcp LISTEN 0 4096 [::ffff:10.0.0.5]:8443 [::]:* users:(("java",pid=4,fd=10))`
+	listeners := ParseSS(out)
+	if len(listeners) != 2 {
+		t.Fatalf("parsed %d sockets", len(listeners))
+	}
+	if listeners[0].Address != "::ffff:127.0.0.1" || listeners[0].Global {
+		t.Errorf("an IPv4-mapped loopback socket parsed as %+v", listeners[0])
+	}
+	if listeners[1].Address != "::ffff:10.0.0.5" || !listeners[1].Global {
+		t.Errorf("an IPv4-mapped routable socket parsed as %+v", listeners[1])
+	}
+}
+
 func TestParseUpdates(t *testing.T) {
 	pacman := ParsePacmanUpdates(fixture(t, "checkupdates.txt"))
 	if len(pacman) != 3 || pacman[1] != "linux" {
