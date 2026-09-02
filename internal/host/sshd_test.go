@@ -425,17 +425,26 @@ func TestFakeAppliesTheSSHDChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reload: %v", err)
 	}
-	if len(before.Actions) != 1 || before.Actions[0].ID != "sshd:PasswordAuthentication" {
-		t.Fatalf("the sample machine offers %v", before.Actions)
+	// The sample machine takes passwords and allows six guesses per
+	// connection, which is the shape a stock sshd has.
+	var ids []string
+	for _, action := range before.Actions {
+		ids = append(ids, action.ID)
+	}
+	want := []string{"sshd:PasswordAuthentication", "sshd:MaxAuthTries"}
+	if strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Fatalf("the sample machine offers %v, want %v", ids, want)
 	}
 
-	plan, err := f.BuildAction(posture.ProbeSSH, before.Actions[0].ID)
-	if err != nil {
-		t.Fatalf("BuildAction: %v", err)
-	}
-	for _, cmd := range plan.Commands {
-		if _, runErr := f.Run(t.Context(), cmd); runErr != nil {
-			t.Fatalf("Run(%s): %v", cmd.String(), runErr)
+	for _, action := range before.Actions {
+		plan, planErr := f.BuildAction(posture.ProbeSSH, action.ID)
+		if planErr != nil {
+			t.Fatalf("BuildAction(%s): %v", action.ID, planErr)
+		}
+		for _, cmd := range plan.Commands {
+			if _, runErr := f.Run(t.Context(), cmd); runErr != nil {
+				t.Fatalf("Run(%s): %v", cmd.String(), runErr)
+			}
 		}
 	}
 
@@ -448,5 +457,184 @@ func TestFakeAppliesTheSSHDChange(t *testing.T) {
 	}
 	if len(after.Actions) != 0 {
 		t.Errorf("the fix is still offered: %v", after.Actions)
+	}
+}
+
+// TestSSHDGradeMatchesWeak is the promise the two halves of an SSHDKey make to
+// each other: a value the screen paints as a weakness is a value the a key
+// offers to change, and nothing else is. Break it and the row says
+// "MaxAuthTries 6, each connection may guess 6 times" over a fix column
+// pointing at a tool that does not exist yet.
+func TestSSHDGradeMatchesWeak(t *testing.T) {
+	corpus := map[string][]string{
+		"PermitRootLogin": {"yes", "no", "prohibit-password",
+			"without-password", "forced-commands-only"},
+		"PasswordAuthentication": {"yes", "no"},
+		"PermitEmptyPasswords":   {"yes", "no"},
+		"PubkeyAuthentication":   {"yes", "no"},
+		"MaxAuthTries":           {"1", "3", "4", "5", "6", "10"},
+		"X11Forwarding":          {"yes", "no"},
+	}
+	if len(corpus) != len(SSHDKeys) {
+		t.Fatalf("the corpus covers %d keywords, the table has %d",
+			len(corpus), len(SSHDKeys))
+	}
+
+	for _, key := range SSHDKeys {
+		values, covered := corpus[key.Key]
+		if !covered {
+			t.Fatalf("%s has no values to grade", key.Key)
+		}
+		for _, value := range values {
+			status, note := key.Grade(value)
+			flagged := status == posture.StatusWarn || status == posture.StatusBad
+			if flagged != key.Weak(strings.ToLower(value)) {
+				t.Errorf("%s %s: graded %s but Weak reports %v",
+					key.Key, value, status, key.Weak(strings.ToLower(value)))
+			}
+			if flagged && note == "" {
+				t.Errorf("%s %s: flagged with no note", key.Key, value)
+			}
+		}
+		// The value this tool writes is never a weakness itself, or the fix
+		// would be offered again the moment it is applied.
+		if key.Weak(strings.ToLower(key.Want)) {
+			t.Errorf("%s: the value it writes, %s, is one it would change",
+				key.Key, key.Want)
+		}
+		if status, _ := key.Grade(""); status != posture.StatusUnknown {
+			t.Errorf("%s: an unreported keyword graded %s, want unknown",
+				key.Key, status)
+		}
+	}
+}
+
+// TestSSHDActionForEveryWeakKeyword walks a stock sshd — the one the probe
+// meets on a machine nobody has hardened — and asks for a fix per weak row.
+func TestSSHDActionForEveryWeakKeyword(t *testing.T) {
+	stock := map[string]string{
+		"permitrootlogin": "prohibit-password", "passwordauthentication": "yes",
+		"permitemptypasswords": "no", "pubkeyauthentication": "yes",
+		"maxauthtries": "6", "x11forwarding": "yes",
+	}
+	offered := map[string]bool{}
+	for _, action := range sshdActions(stock) {
+		offered[strings.TrimPrefix(action.ID, ActionSSHD+":")] = true
+	}
+
+	for _, key := range SSHDKeys {
+		status, _ := key.Grade(stock[strings.ToLower(key.Key)])
+		flagged := status == posture.StatusWarn || status == posture.StatusBad
+		if flagged != offered[key.Key] {
+			t.Errorf("%s: graded %s, offered as a fix: %v",
+				key.Key, status, offered[key.Key])
+		}
+	}
+	if want := 4; len(offered) != want {
+		t.Errorf("a stock sshd was offered %d fixes, want %d", len(offered), want)
+	}
+}
+
+// TestRealAppliesTheSSHDChange runs the whole sshd fix against the machine the
+// test is on: probe it, take the action the probe offered, run the three
+// commands the plan built, and probe again. MaxAuthTries is the keyword it
+// drives because it is the one a stock sshd leaves at 6 and no distribution
+// pins in a drop-in of its own.
+//
+// It changes /etc/ssh/sshd_config.d, so it only runs as root and only when
+// asked for by name — TUI_SECURE_ROOT_LAB=1 in a throwaway container. CI skips
+// it; it is here so the flow the screen drives can be exercised without a
+// human at the keyboard.
+func TestRealAppliesTheSSHDChange(t *testing.T) {
+	if os.Getenv("TUI_SECURE_ROOT_LAB") != "1" || os.Geteuid() != 0 {
+		t.Skip("needs root on a throwaway machine: TUI_SECURE_ROOT_LAB=1")
+	}
+	r, err := NewReal(nil)
+	if err != nil {
+		t.Fatalf("NewReal: %v", err)
+	}
+
+	before, err := r.Reload(t.Context(), posture.ProbeSSH)
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if before.Fix.Tool != "" {
+		t.Errorf("a machine with %d fix(es) of its own says the job belongs "+
+			"to %q", len(before.Actions), before.Fix.Tool)
+	}
+	target := ActionSSHD + ":MaxAuthTries"
+	offered := false
+	for _, action := range before.Actions {
+		if action.ID == target {
+			offered = true
+		}
+	}
+	if !offered {
+		t.Fatalf("MaxAuthTries was not offered; the probe offers %v",
+			before.Actions)
+	}
+
+	plan, err := r.BuildAction(posture.ProbeSSH, target)
+	if err != nil {
+		t.Fatalf("BuildAction: %v", err)
+	}
+	if len(plan.Commands) != 3 {
+		t.Fatalf("the plan runs %d command(s): %v", len(plan.Commands), plan.Commands)
+	}
+	for _, cmd := range plan.Commands {
+		if out, runErr := r.Run(t.Context(), cmd); runErr != nil {
+			t.Fatalf("Run(%s): %v\n%s", cmd.String(), runErr, out)
+		}
+	}
+
+	after, err := r.Reload(t.Context(), posture.ProbeSSH)
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	for _, action := range after.Actions {
+		if action.ID == target {
+			t.Errorf("MaxAuthTries is still offered after the change")
+		}
+	}
+	for _, finding := range after.Findings {
+		if finding.Label == "MaxAuthTries" && finding.Value != "4" {
+			t.Errorf("MaxAuthTries = %q after the change", finding.Value)
+		}
+	}
+}
+
+// TestRealNamesTheDropInThatShadowsIt: on a distribution that pins a keyword
+// in a drop-in sorting before this tool's, the file this tool writes would be
+// read and ignored — sshd keeps the first value it is given. The plan has to
+// say so before it is confirmed, and it says which file to edit instead.
+//
+// Fedora's 50-redhat.conf sets X11Forwarding, which is what makes this
+// runnable in the same container as the test above.
+func TestRealNamesTheDropInThatShadowsIt(t *testing.T) {
+	if os.Getenv("TUI_SECURE_ROOT_LAB") != "1" || os.Geteuid() != 0 {
+		t.Skip("needs root on a throwaway machine: TUI_SECURE_ROOT_LAB=1")
+	}
+	names, contents := sshdDropInFiles()
+	shadow := SSHDShadowedBy(names, contents, "X11Forwarding")
+	if shadow == "" {
+		t.Skip("nothing on this machine shadows X11Forwarding")
+	}
+
+	r, err := NewReal(nil)
+	if err != nil {
+		t.Fatalf("NewReal: %v", err)
+	}
+	if _, err = r.Reload(t.Context(), posture.ProbeSSH); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	plan, err := r.BuildAction(posture.ProbeSSH, ActionSSHD+":X11Forwarding")
+	if err != nil {
+		t.Fatalf("BuildAction: %v", err)
+	}
+	if !strings.Contains(plan.Body, shadow) {
+		t.Errorf("the plan does not name %s:\n%s", shadow, plan.Body)
+	}
+	if !strings.Contains(plan.Body, "read and ignored") {
+		t.Errorf("the plan does not say the file would be ignored:\n%s", plan.Body)
 	}
 }

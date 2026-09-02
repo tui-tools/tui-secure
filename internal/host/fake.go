@@ -32,9 +32,11 @@ type demoState struct {
 	kptrRestrict string
 	timerEnabled bool
 	ufwActive    bool
-	// passwordAuth is the sample sshd's PasswordAuthentication, which the sshd
-	// action turns off.
-	passwordAuth string
+	// sshd holds the keywords an sshd action has changed on the sample
+	// machine, keyed the way `sshd -T` prints them. It is an overlay on the
+	// sample output rather than one named field, so every keyword the tool
+	// offers to set moves in --demo exactly as it would on a machine.
+	sshd map[string]string
 	// nginxRunning is whether the sample machine still answers on port 80,
 	// which the port action stops.
 	nginxRunning bool
@@ -63,7 +65,7 @@ func NewFake() *Fake {
 	f := &Fake{
 		state: demoState{
 			kptrRestrict: "0", timerEnabled: false, ufwActive: true,
-			passwordAuth: "yes", nginxRunning: true,
+			sshd: map[string]string{}, nginxRunning: true,
 		},
 		staged: map[string]string{},
 	}
@@ -138,9 +140,7 @@ func (f *Fake) apply(cmd posture.Command) (string, error) {
 // is what a real reload does with the file the install just put in /etc.
 func (f *Fake) applySSHDDropIn() {
 	for key, value := range parseSSHDDropIn(f.staged[SSHDDropInPath]) {
-		if key == "passwordauthentication" {
-			f.state.passwordAuth = value
-		}
+		f.state.sshd[key] = value
 	}
 }
 
@@ -258,11 +258,21 @@ func (f *Fake) sshdPlan(name string) (posture.Plan, error) {
 	return SSHDPlan(input, "/tmp/tui-secure/"+SSHDDropInName)
 }
 
-// sshdOutput is what `sshd -T` would print on the sample machine now.
+// sshdOutput is what `sshd -T` would print on the sample machine now: the
+// sample output with every keyword a confirmed action has changed laid over
+// it, in the order sshd prints them.
 func (f *Fake) sshdOutput() string {
-	return strings.Replace(demoSSHD,
-		"passwordauthentication yes",
-		"passwordauthentication "+f.state.passwordAuth, 1)
+	lines := splitLines(demoSSHD)
+	for i, line := range lines {
+		key, _, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		if value, changed := f.state.sshd[strings.ToLower(key)]; changed {
+			lines[i] = key + " " + value
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // portUnits maps the sample machine's network-reachable ports onto the units
@@ -357,6 +367,7 @@ To                         Action      From
 permitrootlogin no
 pubkeyauthentication yes
 passwordauthentication yes
+permitemptypasswords no
 maxauthtries 6
 x11forwarding no`
 
@@ -479,49 +490,55 @@ func (f *Fake) firewall() posture.Probe {
 // would after the reload.
 func (f *Fake) ssh() posture.Probe {
 	settings := ParseSSHDConfig(f.sshdOutput())
-	passwords := f.state.passwordAuth == "yes"
 
 	probe := posture.Probe{
 		ID: posture.ProbeSSH, Title: titleFor(posture.ProbeSSH),
-		Status:  boolStatus(!passwords),
-		Summary: "sshd is running with keys only and root login off",
-		Findings: []posture.Finding{
-			{Label: "PermitRootLogin", Value: "no", Status: posture.StatusOK},
-			{Label: "PasswordAuthentication", Value: f.state.passwordAuth,
-				Status: boolStatus(!passwords),
-				Note:   "passwords are guessable; keys are not"},
-			{Label: "PermitEmptyPasswords", Value: "no", Status: posture.StatusOK},
-			{Label: "PubkeyAuthentication", Value: "yes", Status: posture.StatusOK},
-			{Label: "MaxAuthTries", Value: "6", Status: posture.StatusOK},
-			{Label: "X11Forwarding", Value: "no", Status: posture.StatusOK},
-			{Label: "Port", Value: "22", Status: posture.StatusOK},
-			{Label: "running", Value: "sshd is active", Status: posture.StatusOK},
-			{Label: "failed logins (24h)", Value: "3", Status: posture.StatusOK,
-				Note: "from the sshd journal"},
-			{Label: "read from", Value: "`sshd -T`", Status: posture.StatusOK},
-			stack("sshd: running"),
-		},
-		Evidence: []posture.Evidence{
-			{Command: "sudo -n sshd -T",
-				Line: "passwordauthentication " + f.state.passwordAuth},
-			{Command: `journalctl -u sshd -u ssh --since -24h --grep Failed password|Invalid user`,
-				Line: firstMatch(demoFailedLogins, "Failed password")},
-		},
-		Raw: "$ sudo -n sshd -T\n" + f.sshdOutput() +
-			"\n\n$ journalctl -u sshd -u ssh --since -24h --grep 'Failed password|Invalid user'\n" +
-			demoFailedLogins + "\n",
 	}
-	if passwords {
-		probe.Summary = "sshd is running with password authentication on"
+	// The keywords are graded out of the same table the host backend grades
+	// them with, so the demo shows the fixes a real machine in this shape
+	// would offer rather than a hand-written copy of them.
+	statuses := []posture.Status{}
+	for _, key := range SSHDKeys {
+		value := settings[strings.ToLower(key.Key)]
+		status, note := key.Grade(value)
+		statuses = append(statuses, status)
+		probe.Findings = append(probe.Findings, posture.Finding{
+			Label: key.Key, Value: orUnknown(value), Status: status, Note: note})
+	}
+	probe.Findings = append(probe.Findings,
+		posture.Finding{Label: "Port", Value: settings["port"],
+			Status: posture.StatusOK},
+		posture.Finding{Label: "running", Value: "sshd is active",
+			Status: posture.StatusOK},
+		posture.Finding{Label: "failed logins (24h)", Value: "3",
+			Status: posture.StatusOK, Note: "from the sshd journal"},
+		posture.Finding{Label: "read from", Value: "`sshd -T`",
+			Status: posture.StatusOK},
+		stack("sshd: running"))
+
+	probe.Status = posture.Worst(statuses...)
+	probe.Summary = sshSummary(settings, probe.Status)
+	probe.Evidence = []posture.Evidence{
+		{Command: "sudo -n sshd -T",
+			Line: "passwordauthentication " + settings["passwordauthentication"]},
+		{Command: `journalctl -u sshd -u ssh --since -24h --grep Failed password|Invalid user`,
+			Line: firstMatch(demoFailedLogins, "Failed password")},
+	}
+	probe.Raw = "$ sudo -n sshd -T\n" + f.sshdOutput() +
+		"\n\n$ journalctl -u sshd -u ssh --since -24h --grep 'Failed password|Invalid user'\n" +
+		demoFailedLogins + "\n"
+
+	probe.Actions = sshdActions(settings)
+	if len(probe.Actions) > 0 {
 		probe.Fix = posture.Fix{
-			Tool: "tui-ssh (planned)",
 			Hint: "Each keyword below can be set in " + SSHDDropInPath +
 				", checked with `sshd -t -f` and reloaded. Press a to do it " +
 				"one keyword at a time, previewed first.",
 			Command: "sudo sshd -t && sudo systemctl reload sshd",
 		}
+	} else if probe.Status != posture.StatusOK {
+		probe.Fix.Tool = sshdOwner
 	}
-	probe.Actions = sshdActions(settings)
 	return probe
 }
 
@@ -616,33 +633,20 @@ func (f *Fake) kernel() posture.Probe {
 		ID: posture.ProbeKernel, Title: titleFor(posture.ProbeKernel),
 	}
 	var raw strings.Builder
-	weak := 0
-	statuses := []posture.Status{posture.StatusOK}
 	for _, key := range HardeningKeys {
-		value := values[key.Key]
-		fmt.Fprintf(&raw, "$ sysctl -n %s\n%s\n\n", key.Key, value)
-		status := posture.StatusOK
-		if !key.Satisfied(value) {
-			status, weak = posture.StatusWarn, weak+1
-			statuses = append(statuses, status)
-			probe.Evidence = append(probe.Evidence, posture.Evidence{
-				Command: "sysctl -n " + key.Key, Line: key.Key + " = " + value})
-			if key.Fixable {
-				probe.Actions = append(probe.Actions, posture.Action{
-					ID: ActionSysctl + ":" + key.Key,
-					Label: fmt.Sprintf("Set %s=%s, now and on every boot",
-						key.Key, key.Want),
-				})
-			}
-		}
-		probe.Findings = append(probe.Findings, posture.Finding{
-			Label: key.Key, Value: value, Status: status, Note: key.Why})
+		fmt.Fprintf(&raw, "$ sysctl -n %s\n%s\n\n", key.Key, values[key.Key])
 	}
-	probe.Status = posture.Worst(statuses...)
-	if weak == 0 {
-		probe.Summary = "the hardening basics are set"
-	} else {
-		probe.Summary = fmt.Sprintf("%d hardening key(s) below the recommended value", weak)
+
+	grade := GradeHardening(values, nil)
+	for _, key := range grade.Weak {
+		probe.Evidence = append(probe.Evidence, posture.Evidence{
+			Command: "sysctl -n " + key, Line: key + " = " + values[key]})
+	}
+	probe.Findings = grade.Findings
+	probe.Actions = grade.Actions
+	probe.Status = grade.Status
+	probe.Summary = grade.Summary
+	if len(grade.Actions) > 0 {
 		probe.Fix.Hint = "Each key can be set now and made persistent in " +
 			DropInPath + ". Press a to do it one key at a time, previewed first."
 	}

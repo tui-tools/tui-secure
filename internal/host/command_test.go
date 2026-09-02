@@ -166,3 +166,89 @@ func TestBuildActionRefusesWhatIsNotOffered(t *testing.T) {
 		}
 	}
 }
+
+// TestHardeningSummaryCountsTheFixesItOffers is the bug the kernel row had: it
+// said "4 keys below the recommended value" while the picker held three,
+// because net.ipv4.ip_forward is graded and never offered. The number in the
+// line and the number of fixes behind the a key are now the same count.
+func TestHardeningSummaryCountsTheFixesItOffers(t *testing.T) {
+	// A machine with three fixable keys wrong and ip_forward on, which is the
+	// shape a container host or a router has.
+	values := map[string]string{
+		"kernel.kptr_restrict":   "0",
+		"kernel.dmesg_restrict":  "1",
+		"fs.protected_hardlinks": "1",
+		"fs.protected_symlinks":  "1",
+		"fs.protected_fifos":     "1",
+		"fs.protected_regular":   "1",
+		"fs.suid_dumpable":       "2",
+		"net.ipv4.ip_forward":    "1",
+		"kernel.core_pattern":    "|/usr/lib/systemd/systemd-coredump",
+	}
+
+	grade := GradeHardening(values, nil)
+	if len(grade.Actions) != 3 {
+		t.Fatalf("offers %d fix(es): %v", len(grade.Actions), grade.Actions)
+	}
+	if len(grade.Weak) != 4 {
+		t.Fatalf("graded %d key(s) weak: %v", len(grade.Weak), grade.Weak)
+	}
+	if !strings.HasPrefix(grade.Summary, "3 hardening key(s) below") {
+		t.Errorf("summary = %q, want it to count the 3 fixes it offers",
+			grade.Summary)
+	}
+	if !strings.Contains(grade.Summary, "1 worth a look this tool leaves alone") {
+		t.Errorf("summary = %q, want it to say ip_forward is not one of them",
+			grade.Summary)
+	}
+	if grade.Status != posture.StatusWarn {
+		t.Errorf("status = %s, want warn", grade.Status)
+	}
+}
+
+// TestHardeningSummaryStopsCountingWhenNothingIsWrong covers the two ends: a
+// machine with nothing to fix, and one whose only finding is the key this tool
+// reports and never sets.
+func TestHardeningSummaryStopsCountingWhenNothingIsWrong(t *testing.T) {
+	values := map[string]string{}
+	for _, key := range HardeningKeys {
+		values[key.Key] = key.Want
+	}
+	values["kernel.core_pattern"] = "|/usr/lib/systemd/systemd-coredump"
+
+	grade := GradeHardening(values, nil)
+	if grade.Summary != "the hardening basics are set" {
+		t.Errorf("summary = %q", grade.Summary)
+	}
+	if len(grade.Actions) != 0 || grade.Status != posture.StatusOK {
+		t.Errorf("a hardened machine got %v / %s", grade.Actions, grade.Status)
+	}
+
+	values["net.ipv4.ip_forward"] = "1"
+	grade = GradeHardening(values, nil)
+	if len(grade.Actions) != 0 {
+		t.Errorf("ip_forward was offered as a fix: %v", grade.Actions)
+	}
+	if !strings.Contains(grade.Summary, "1 key(s) worth a look") {
+		t.Errorf("summary = %q", grade.Summary)
+	}
+}
+
+// TestHardeningUnknownKeyIsNotCounted: a key the read could not answer is a
+// row saying so, not a weakness and not a fix.
+func TestHardeningUnknownKeyIsNotCounted(t *testing.T) {
+	grade := GradeHardening(map[string]string{},
+		map[string]string{"kernel.kptr_restrict": "sysctl: not found"})
+	if len(grade.Actions) != 0 || len(grade.Weak) != 0 {
+		t.Fatalf("an unread machine offered %v", grade.Actions)
+	}
+	if grade.Status != posture.StatusUnknown {
+		t.Errorf("status = %s, want unknown", grade.Status)
+	}
+	if grade.Findings[0].Note != "sysctl: not found" {
+		t.Errorf("the reason was dropped: %q", grade.Findings[0].Note)
+	}
+	if want := "9 hardening key(s) could not be read"; grade.Summary != want {
+		t.Errorf("summary = %q, want %q", grade.Summary, want)
+	}
+}
