@@ -129,7 +129,7 @@ Upgrades then arrive with the rest of your system updates.
 ### Any distribution, static binary
 
 ```sh
-curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.2.1/tui-secure_0.2.1_linux_amd64.tar.gz | tar -xz tui-secure
+curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.2.2/tui-secure_0.2.2_linux_amd64.tar.gz | tar -xz tui-secure
 sudo install -m0755 tui-secure /usr/local/bin/tui-secure
 ```
 
