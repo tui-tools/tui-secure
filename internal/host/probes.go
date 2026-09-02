@@ -495,11 +495,24 @@ var sshdConfigPaths = []string{"/etc/ssh/sshd_config"}
 // sshdDropInDir holds the drop-ins a distribution and its packages add.
 const sshdDropInDir = "/etc/ssh/sshd_config.d"
 
+// sshdOwner names the tool that owns the sshd settings tui-secure does not:
+// the port, the listen addresses, the ciphers, the whole file. It is only ever
+// shown when this tool has no fix of its own to offer, so a machine with a
+// weak keyword shows its own "a to fix here" instead.
+const sshdOwner = "tui-ssh (planned)"
+
+// sshdReadHint is what to do when the configuration could not be read. `sshd
+// -T` is sshd resolving its own files and it needs root; without it the probe
+// falls back to the files, and on a distribution that ships sshd_config
+// root-only there is nothing to fall back to.
+const sshdReadHint = "`sshd -T` needs root and this process is not root, so " +
+	"the keywords could not be graded and none can be set. Re-run with " +
+	"passwordless sudo (--sudo \"sudo -n\") or as root."
+
 // probeSSH asks how the one service the internet talks to is configured.
 func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 	c := &collector{}
 	probe := posture.Probe{ID: posture.ProbeSSH, Title: titleFor(posture.ProbeSSH)}
-	probe.Fix.Tool = "tui-ssh (planned)"
 	defer func() { probe.Evidence, probe.Raw = c.evidence, c.raw.String() }()
 
 	active, unit := r.sshdActive(ctx, c)
@@ -508,6 +521,11 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 		probe.Status = posture.StatusUnknown
 		probe.Summary = "could not read the sshd configuration"
 		probe.Reason = reason(err)
+		// Nothing was read, so nothing may be written: the fixes this tool
+		// owns are all "change a keyword whose current value was judged", and
+		// there is no judged value here. Saying which read failed is the help.
+		probe.Fix.Tool = sshdOwner
+		probe.Fix.Hint = sshdReadHint
 		probe.Findings = append(probe.Findings,
 			posture.Finding{Label: "running", Value: yesNo(active, "yes", "no"),
 				Status: posture.StatusOK},
@@ -515,61 +533,22 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 		return probe
 	}
 
+	// Every keyword is graded out of the table that also decides what this
+	// tool would set it to, so a row the screen calls a weakness always has
+	// the matching "Set X to Y" waiting behind a.
 	statuses := []posture.Status{}
-	add := func(label, key string, judge func(string) (posture.Status, string)) {
-		value := settings[key]
-		status, note := judge(value)
+	unreported := 0
+	for _, key := range SSHDKeys {
+		value := settings[strings.ToLower(key.Key)]
+		status, note := key.Grade(value)
 		statuses = append(statuses, status)
+		if value == "" {
+			unreported++
+		}
 		probe.Findings = append(probe.Findings, posture.Finding{
-			Label: label, Value: orUnknown(value), Status: status, Note: note})
+			Label: key.Key, Value: orUnknown(value), Status: status, Note: note})
 	}
 
-	add("PermitRootLogin", "permitrootlogin", func(v string) (posture.Status, string) {
-		switch strings.ToLower(v) {
-		case "yes":
-			return posture.StatusBad, "root can log in over ssh with a password"
-		case "prohibit-password", "without-password":
-			return posture.StatusWarn, "root can log in with a key"
-		case "":
-			return posture.StatusUnknown, "sshd did not report this keyword"
-		default:
-			return posture.StatusOK, ""
-		}
-	})
-	add("PasswordAuthentication", "passwordauthentication", func(v string) (posture.Status, string) {
-		if strings.EqualFold(v, "yes") {
-			return posture.StatusWarn, "passwords are guessable; keys are not"
-		}
-		return posture.StatusOK, ""
-	})
-	add("PermitEmptyPasswords", "permitemptypasswords", func(v string) (posture.Status, string) {
-		if strings.EqualFold(v, "yes") {
-			return posture.StatusBad, "an account with no password is an open door"
-		}
-		return posture.StatusOK, ""
-	})
-	add("PubkeyAuthentication", "pubkeyauthentication", func(v string) (posture.Status, string) {
-		if strings.EqualFold(v, "no") {
-			return posture.StatusWarn, "key authentication is off, leaving passwords"
-		}
-		return posture.StatusOK, ""
-	})
-	add("MaxAuthTries", "maxauthtries", func(v string) (posture.Status, string) {
-		tries, convErr := strconv.Atoi(v)
-		if convErr != nil {
-			return posture.StatusOK, ""
-		}
-		if tries > 6 {
-			return posture.StatusWarn, "each connection may guess " + v + " times"
-		}
-		return posture.StatusOK, ""
-	})
-	add("X11Forwarding", "x11forwarding", func(v string) (posture.Status, string) {
-		if strings.EqualFold(v, "yes") {
-			return posture.StatusWarn, "X11 forwarding exposes the client's display"
-		}
-		return posture.StatusOK, ""
-	})
 	probe.Findings = append(probe.Findings, posture.Finding{
 		Label: "Port", Value: orUnknown(settings["port"]), Status: posture.StatusOK})
 	probe.Findings = append(probe.Findings, posture.Finding{
@@ -600,13 +579,24 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 	probe.Findings = append(probe.Findings, stack("sshd: "+
 		yesNo(active, "running", "stopped")))
 
-	if probe.Status != posture.StatusOK {
+	probe.Actions = append(probe.Actions, sshdActions(settings)...)
+	if len(probe.Actions) > 0 {
 		probe.Fix.Hint = "Each keyword below can be set in " + SSHDDropInPath +
 			", checked with `sshd -t -f` and reloaded. Press a to do it one " +
 			"keyword at a time, previewed first."
 		probe.Fix.Command = "sudo sshd -t && sudo systemctl reload " + unit
+	} else if probe.Status != posture.StatusOK {
+		// Nothing here is a keyword this tool sets. Saying whose job it is
+		// beats an empty fix column, and the two reasons for landing here get
+		// different sentences: a value nobody read, or a setting outside the
+		// six keywords tui-secure owns.
+		probe.Fix.Tool = sshdOwner
+		probe.Fix.Hint = "The keywords tui-secure sets are already at the " +
+			"value it would write; what is left belongs to " + sshdOwner + "."
+		if unreported > 0 {
+			probe.Fix.Hint = sshdReadHint
+		}
 	}
-	probe.Actions = append(probe.Actions, sshdActions(settings)...)
 
 	// The plan for a keyword is built from this read rather than from a second
 	// one, so what the dialog changes is what the screen judged.
@@ -654,6 +644,13 @@ func sshSummary(settings map[string]string, status posture.Status) string {
 		flags = append(flags, "public keys off")
 	}
 	if len(flags) == 0 {
+		// No headline weakness, but the row is not green either: say how many
+		// keywords are behind the a key rather than leaving the reader to
+		// guess what "worth a look" means.
+		if weak := len(sshdActions(settings)); weak > 0 {
+			return fmt.Sprintf(
+				"sshd is running, with %d keyword(s) this tool would change", weak)
+		}
 		return "sshd is running, with settings worth a look"
 	}
 	return "sshd is running with " + strings.Join(flags, " and ")
@@ -1131,40 +1128,30 @@ func (r *Real) probeKernel(ctx context.Context) posture.Probe {
 	}
 	defer func() { probe.Evidence, probe.Raw = c.evidence, c.raw.String() }()
 
-	statuses := []posture.Status{posture.StatusOK}
-	weak := 0
+	// The values are read first and graded afterwards, by the same function
+	// the demo backend grades with, so the number in the summary and the fixes
+	// behind the a key are the same count.
+	values, notes := map[string]string{}, map[string]string{}
+	previews := map[string]string{}
 	for _, key := range HardeningKeys {
 		out, preview, err := r.read(ctx, c, "sysctl", "-n", key.Key)
-		value := strings.TrimSpace(firstLine(out))
-		if err != nil || value == "" {
-			probe.Findings = append(probe.Findings, posture.Finding{
-				Label: key.Key, Value: "unknown", Status: posture.StatusUnknown,
-				Note: reason(err)})
+		if err != nil {
+			notes[key.Key] = reason(err)
 			continue
 		}
-		ok := key.Satisfied(value)
-		status := posture.StatusOK
-		if !ok {
-			status = posture.StatusWarn
-			statuses = append(statuses, status)
-			weak++
-			c.judged(preview, key.Key+" = "+value)
-			if key.Fixable {
-				probe.Actions = append(probe.Actions, posture.Action{
-					ID:    ActionSysctl + ":" + key.Key,
-					Label: fmt.Sprintf("Set %s=%s, now and on every boot", key.Key, key.Want),
-				})
-			}
-		}
-		probe.Findings = append(probe.Findings, posture.Finding{
-			Label: key.Key, Value: value, Status: status, Note: key.Why})
+		values[key.Key] = strings.TrimSpace(firstLine(out))
+		previews[key.Key] = preview
 	}
 
-	probe.Status = posture.Worst(statuses...)
-	if weak == 0 {
-		probe.Summary = "the hardening basics are set"
-	} else {
-		probe.Summary = fmt.Sprintf("%d hardening key(s) below the recommended value", weak)
+	grade := GradeHardening(values, notes)
+	for _, key := range grade.Weak {
+		c.judged(previews[key], key+" = "+values[key])
+	}
+	probe.Findings = append(probe.Findings, grade.Findings...)
+	probe.Actions = append(probe.Actions, grade.Actions...)
+	probe.Status = grade.Status
+	probe.Summary = grade.Summary
+	if len(grade.Actions) > 0 {
 		probe.Fix.Hint = "Each key can be set now and made persistent in " +
 			DropInPath + ". Press a to do it one key at a time, previewed first."
 	}

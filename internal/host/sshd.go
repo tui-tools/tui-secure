@@ -48,6 +48,22 @@ type SSHDKey struct {
 	// Weak reports that a value read from the machine is one this tool offers
 	// to change. It is given the value as `sshd -T` printed it, lowercased.
 	Weak func(value string) bool
+	// Grade is the verdict the ssh probe puts on a value this machine
+	// reports, with the note that explains it.
+	//
+	// It lives in the same entry as Weak on purpose. The two answer one
+	// question each — "is this worth flagging" and "will this tool change it"
+	// — and a row flagged as a weakness whose fix is never offered is exactly
+	// the shape of a tool that only views. TestSSHDGradeMatchesWeak holds the
+	// pair to that promise for every value in the table's own corpus.
+	Grade func(value string) (posture.Status, string)
+}
+
+// sshdUnreported is the verdict for a keyword sshd did not answer for, which
+// is what the unprivileged fallback gets for everything sshd_config leaves
+// commented out. It is not "ok": nobody read it.
+func sshdUnreported() (posture.Status, string) {
+	return posture.StatusUnknown, "sshd did not report this keyword"
 }
 
 // SSHDKeys are the keywords the ssh probe grades and this tool will set, in the
@@ -70,36 +86,132 @@ var SSHDKeys = []SSHDKey{
 			}
 			return false
 		},
+		Grade: func(v string) (posture.Status, string) {
+			switch strings.ToLower(v) {
+			case "":
+				return sshdUnreported()
+			case "yes":
+				return posture.StatusBad, "root can log in over ssh with a password"
+			case "prohibit-password", "without-password":
+				return posture.StatusWarn, "root can log in with a key"
+			case "forced-commands-only":
+				return posture.StatusWarn, "root can log in to run a forced command"
+			default:
+				return posture.StatusOK, ""
+			}
+		},
 	},
 	{
 		Key: "PasswordAuthentication", Want: "no",
 		Why:  "passwords are guessable; keys are not",
 		Weak: func(v string) bool { return v == "yes" },
+		Grade: func(v string) (posture.Status, string) {
+			switch {
+			case v == "":
+				return sshdUnreported()
+			case strings.EqualFold(v, "yes"):
+				return posture.StatusWarn, "passwords are guessable; keys are not"
+			default:
+				return posture.StatusOK, ""
+			}
+		},
 	},
 	{
 		Key: "PermitEmptyPasswords", Want: "no",
 		Why:  "an account with no password would otherwise be an open door",
 		Weak: func(v string) bool { return v == "yes" },
+		Grade: func(v string) (posture.Status, string) {
+			switch {
+			case v == "":
+				return sshdUnreported()
+			case strings.EqualFold(v, "yes"):
+				return posture.StatusBad, "an account with no password is an open door"
+			default:
+				return posture.StatusOK, ""
+			}
+		},
 	},
 	{
 		Key: "PubkeyAuthentication", Want: "yes",
 		Why:  "key authentication is the way in that this tool assumes exists",
 		Weak: func(v string) bool { return v == "no" },
+		Grade: func(v string) (posture.Status, string) {
+			switch {
+			case v == "":
+				return sshdUnreported()
+			case strings.EqualFold(v, "no"):
+				return posture.StatusWarn, "key authentication is off, leaving passwords"
+			default:
+				return posture.StatusOK, ""
+			}
+		},
 	},
 	{
 		Key: "MaxAuthTries", Want: "4",
 		Why: "each connection gets a bounded number of guesses before it is " +
 			"dropped",
+		// OpenSSH defaults to 6, and 6 is the value this tool offers to lower:
+		// the fix column would otherwise name a weakness on the row and refuse
+		// to act on it.
 		Weak: func(v string) bool {
 			tries, err := strconv.Atoi(v)
-			return err == nil && tries > 6
+			return err == nil && tries > sshdMaxAuthTries
+		},
+		Grade: func(v string) (posture.Status, string) {
+			if v == "" {
+				return sshdUnreported()
+			}
+			tries, err := strconv.Atoi(strings.TrimSpace(v))
+			if err != nil {
+				return posture.StatusUnknown, "sshd reported a value that is not a number"
+			}
+			if tries > sshdMaxAuthTries {
+				return posture.StatusWarn, "each connection may guess " + v + " times"
+			}
+			return posture.StatusOK, ""
 		},
 	},
 	{
 		Key: "X11Forwarding", Want: "no",
 		Why:  "X11 forwarding exposes the client's display to the server",
 		Weak: func(v string) bool { return v == "yes" },
+		Grade: func(v string) (posture.Status, string) {
+			switch {
+			case v == "":
+				return sshdUnreported()
+			case strings.EqualFold(v, "yes"):
+				return posture.StatusWarn, "X11 forwarding exposes the client's display"
+			default:
+				return posture.StatusOK, ""
+			}
+		},
 	},
+}
+
+// sshdMaxAuthTries is the highest number of guesses per connection this tool
+// leaves alone. It is the Want of the MaxAuthTries entry, and both the grade
+// and the offer read it, so the row and the fix cannot disagree.
+const sshdMaxAuthTries = 4
+
+// SSHDGrade is the verdict and note for one keyword as this machine reports
+// it, which is what the ssh probe puts on the row. A keyword this tool has no
+// opinion about is reported without a verdict.
+func SSHDGrade(key, value string) (posture.Status, string) {
+	owned, ok := sshdKey(key)
+	if !ok || owned.Grade == nil {
+		return posture.StatusOK, ""
+	}
+	return owned.Grade(value)
+}
+
+// SSHDWeak reports that the value this machine has for a keyword is one this
+// tool offers to change.
+func SSHDWeak(key, value string) bool {
+	owned, ok := sshdKey(key)
+	if !ok || owned.Weak == nil {
+		return false
+	}
+	return owned.Weak(strings.ToLower(strings.TrimSpace(value)))
 }
 
 // sshdKey finds a keyword by name, case-insensitively, which is how sshd reads

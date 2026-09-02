@@ -129,7 +129,7 @@ Upgrades then arrive with the rest of your system updates.
 ### Any distribution, static binary
 
 ```sh
-curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.1.2/tui-secure_0.1.2_linux_amd64.tar.gz | tar -xz tui-secure
+curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.2.1/tui-secure_0.2.1_linux_amd64.tar.gz | tar -xz tui-secure
 sudo install -m0755 tui-secure /usr/local/bin/tui-secure
 ```
 
@@ -207,10 +207,10 @@ trust, and this tool would rather be argued with.
 | **Secure Boot** | `bootctl status`, and `sbctl status` where sbctl is installed | `ok` enabled · `warn` off · `bad` firmware in setup mode · `unknown` no EFI |
 | **Access control** | `getenforce` and `sestatus`, or `aa-status --json`; denials from `journalctl -k`, or `ausearch -m avc` where auditd runs | `ok` enforcing · `warn` permissive, complain-only, disabled, or no MAC layer at all |
 | **Firewall** | `ufw status verbose`, or `firewall-cmd --state` and its default zone, or the `nft` ruleset and the file `nftables.service` would load | `ok` active · `warn` a permissive default · `bad` installed and off, or nothing at all |
-| **SSH server** | `sshd -T`, falling back to `sshd_config` and its drop-ins; `systemctl is-active`; failed logins from the journal | `bad` root login with a password, empty passwords permitted · `warn` passwords on, keys off, MaxAuthTries high, X11 forwarding on |
+| **SSH server** | `sshd -T`, falling back to `sshd_config` and its drop-ins; `systemctl is-active`; failed logins from the journal | `bad` root login with a password, empty passwords permitted · `warn` root login with a key, passwords on, keys off, MaxAuthTries above 4, X11 forwarding on · `unknown` a keyword sshd did not report |
 | **Updates** | `checkupdates` / `pacman -Qu`, `apt-get -s upgrade`, `dnf check-update`; whether a reboot is owed; the unattended update timer | `ok` nothing pending · `warn` updates waiting, a reboot owed, or no timer enabled |
 | **Accounts** | `/etc/passwd` for UID 0, `/etc/shadow` for empty passwords, `sudo -n -l` for NOPASSWD | `bad` a second root or an empty password · `warn` passwordless sudo · `unknown` /etc/shadow needs root |
-| **Kernel hardening** | `sysctl -n` for `kernel.kptr_restrict`, `kernel.dmesg_restrict`, `fs.protected_*`, `fs.suid_dumpable`, `net.ipv4.ip_forward` and `kernel.core_pattern` | `ok` the basics are set · `warn` a key below the recommended value |
+| **Kernel hardening** | `sysctl -n` for `kernel.kptr_restrict`, `kernel.dmesg_restrict`, `fs.protected_*`, `fs.suid_dumpable`, `net.ipv4.ip_forward` and `kernel.core_pattern` | `ok` the basics are set · `warn` a key below the recommended value; `net.ipv4.ip_forward` is reported in a clause of its own and never counted as a fix, so the number in the line is the number of fixes behind `a` |
 | **Listening ports** | `ss -tulpnH`, with the process behind each socket and the unit it belongs to, read from `/proc/<pid>/cgroup` | `ok` everything on loopback · `warn` sockets reachable from the network |
 
 The score in the header is the weighted count: an `ok` counts whole, a `warn`
@@ -233,7 +233,7 @@ shown as an exact command line and confirmed first:
 | Key | What runs |
 | --- | --- |
 | `a` on the firewall probe | `ufw enable`, or `systemctl enable --now firewalld`, or `systemctl enable --now nftables` — whichever firewall this machine actually has |
-| `a` on the SSH probe | `sshd -t -f <staged drop-in>`, then `install -m 600 <it> /etc/ssh/sshd_config.d/50-tui-secure.conf`, then `systemctl reload sshd` |
+| `a` on the SSH probe | `sshd -t -f <staged drop-in>`, then `install -m 600 <it> /etc/ssh/sshd_config.d/50-tui-secure.conf`, then `systemctl reload sshd`. One keyword at a time, and every keyword the probe grades as a weakness has its own `Set X to Y`: `PermitRootLogin no`, `PasswordAuthentication no`, `PermitEmptyPasswords no`, `PubkeyAuthentication yes`, `MaxAuthTries 4`, `X11Forwarding no` |
 | `a` on the kernel probe | `install -m 644 <staged drop-in> /etc/sysctl.d/90-tui-secure.conf`, then `sysctl -w <key>=<value>` |
 | `a` on the updates probe | `systemctl enable --now <the distribution's update timer>` |
 | `a` on the ports probe | `systemctl disable --now <the unit behind the port>` |
@@ -264,6 +264,11 @@ changes are refused rather than warned about:
   for `/etc/nftables.conf` (or `/etc/sysconfig/nftables.conf`). Without that
   file, or with one `nft -c -f` will not parse, the action is refused: a service
   that comes up and filters nothing looks like a fix and is not one.
+
+A change that would be **read and ignored** is warned about rather than
+refused: sshd keeps the first value it is given for a keyword, so a drop-in
+sorting before `50-tui-secure.conf` — Fedora's `50-redhat.conf`, for one —
+wins. The dialog names that file and says to change it there instead.
 
 The ssh server is also never offered as something to stop, whatever port the
 ports probe finds it on.

@@ -145,6 +145,98 @@ var HardeningKeys = []SysctlKey{
 		Why: "where a crashing process's memory is written"},
 }
 
+// HardeningGrade is the kernel probe's verdict on the sysctl values read from
+// a machine: the rows to show, the fixes to offer, and the line at the top.
+type HardeningGrade struct {
+	// Findings is one row per key in HardeningKeys, in table order.
+	Findings []posture.Finding
+	// Actions are the fixes the a key will offer, in the same order.
+	Actions []posture.Action
+	// Status is the worst verdict on the rows.
+	Status posture.Status
+	// Weak names every key below the recommended value, the ones no fix is
+	// offered for included. It is what the caller records evidence from.
+	Weak []string
+	// Summary is the one line the row shows.
+	Summary string
+}
+
+// GradeHardening grades the sysctl values read from a machine.
+//
+// Both backends call it, and they call it for the same reason the count and
+// the picker have to agree: the summary's number is len(Actions) plus the keys
+// this tool only reports, computed here once, rather than a counter each
+// caller keeps by hand. A key missing from values was not read; its reason, if
+// there is one, comes in as a note.
+func GradeHardening(values, notes map[string]string) HardeningGrade {
+	var grade HardeningGrade
+	statuses := []posture.Status{posture.StatusOK}
+	advisory, unread := 0, 0
+	for _, key := range HardeningKeys {
+		value, read := values[key.Key]
+		if !read || value == "" {
+			// A key nobody read is neither a weakness nor a fix, and it is not
+			// an "ok" either: the row says unknown and the probe says so too.
+			unread++
+			statuses = append(statuses, posture.StatusUnknown)
+			grade.Findings = append(grade.Findings, posture.Finding{
+				Label: key.Key, Value: "unknown", Status: posture.StatusUnknown,
+				Note: notes[key.Key]})
+			continue
+		}
+		status := posture.StatusOK
+		if !key.Satisfied(value) {
+			status = posture.StatusWarn
+			statuses = append(statuses, status)
+			grade.Weak = append(grade.Weak, key.Key)
+			if key.Fixable {
+				grade.Actions = append(grade.Actions, posture.Action{
+					ID: ActionSysctl + ":" + key.Key,
+					Label: fmt.Sprintf("Set %s=%s, now and on every boot",
+						key.Key, key.Want),
+				})
+			} else {
+				advisory++
+			}
+		}
+		grade.Findings = append(grade.Findings, posture.Finding{
+			Label: key.Key, Value: value, Status: status, Note: key.Why})
+	}
+	grade.Status = posture.Worst(statuses...)
+	grade.Summary = hardeningSummary(len(grade.Actions), advisory, unread)
+	return grade
+}
+
+// hardeningSummary turns the two counts into words.
+//
+// They are counted apart because they mean different things to the reader.
+// The first is the number of keys below the recommended value that this tool
+// offers to set, and it is the number of entries the fix picker will hold —
+// the two disagreeing is how a row promises four fixes and offers three. The
+// second is the keys that are worth knowing about and have no single right
+// value, so they get a clause of their own and are never counted as fixes.
+// The third is the keys nobody could read, which only has a line to itself
+// when there is nothing else to say.
+func hardeningSummary(fixable, advisory, unread int) string {
+	if fixable == 0 && advisory == 0 && unread > 0 {
+		return fmt.Sprintf("%d hardening key(s) could not be read", unread)
+	}
+	switch {
+	case fixable == 0 && advisory == 0:
+		return "the hardening basics are set"
+	case fixable == 0:
+		return fmt.Sprintf(
+			"the hardening basics are set, and %d key(s) worth a look this tool leaves alone",
+			advisory)
+	case advisory == 0:
+		return fmt.Sprintf("%d hardening key(s) below the recommended value", fixable)
+	default:
+		return fmt.Sprintf(
+			"%d hardening key(s) below the recommended value, and %d worth a look this tool leaves alone",
+			fixable, advisory)
+	}
+}
+
 // hardeningKey finds a key by name.
 func hardeningKey(name string) (SysctlKey, bool) {
 	for _, key := range HardeningKeys {
