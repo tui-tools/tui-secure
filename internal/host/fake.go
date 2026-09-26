@@ -100,7 +100,7 @@ func (f *Fake) apply(cmd posture.Command) (string, error) {
 		return "", nil
 	}
 	switch argv[0] + " " + argv[1] {
-	case "ufw enable":
+	case "ufw --force":
 		f.state.ufwActive = true
 		return "Firewall is active and enabled on system startup", nil
 	case "systemctl enable":
@@ -172,7 +172,7 @@ func (f *Fake) Reload(_ context.Context, id string) (posture.Probe, error) {
 func (f *Fake) BuildAction(probeID, actionID string) (posture.Plan, error) {
 	kind, argument, hasArgument := strings.Cut(actionID, ":")
 	switch kind {
-	case ActionFirewalldEnable, ActionNftablesEnable:
+	case ActionUfwEnable, ActionFirewalldEnable, ActionNftablesEnable:
 		if hasArgument {
 			return posture.Plan{}, fmt.Errorf("host: %q takes no argument", kind)
 		}
@@ -190,6 +190,12 @@ func (f *Fake) BuildAction(probeID, actionID string) (posture.Plan, error) {
 					"can stop; re-run the probe", argument)
 		}
 		return PortDisablePlan(argument, unit)
+
+	case ActionUfwEnable:
+		// The sample machine's ufw has an ssh rule, and the demo is not an
+		// ssh session, so the dialog shows the reassuring case.
+		return UfwEnablePlan(SSHAccess{Port: "22", Source: "sshd's configuration",
+			Known: true, Allowed: true, Rule: "ufw allow 22/tcp"})
 
 	case ActionFirewalldEnable:
 		return FirewallEnablePlan(kind, "", "")

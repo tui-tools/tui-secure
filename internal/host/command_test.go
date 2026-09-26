@@ -16,7 +16,7 @@ func TestCommandArgvIsExact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildUfwEnable: %v", err)
 	}
-	if got := ufw.String(); got != "ufw enable" {
+	if got := ufw.String(); got != "ufw --force enable" {
 		t.Errorf("ufw argv = %q", got)
 	}
 	if !ufw.Destructive {

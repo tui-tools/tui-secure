@@ -19,7 +19,7 @@ import (
 // a probe that can name what is wrong and cannot offer to fix it is a probe
 // that sends the reader somewhere else for a one-line change.
 //
-//	ufw enable                          turn the firewall on
+//	ufw --force enable                  turn the firewall on (see ufw.go)
 //	systemctl enable --now firewalld    the same, where firewalld is the one
 //	systemctl enable --now nftables     the same, from /etc/nftables.conf
 //	sysctl -w <key>=<value>             set one hardening key, plus its drop-in
@@ -262,9 +262,14 @@ var unitRe = regexp.MustCompile(`^[A-Za-z0-9@._-]+\.(timer|service)$`)
 // BuildUfwEnable turns ufw on. It is destructive in the family's sense: on a
 // machine reached over the network, enabling a firewall whose ssh rule is
 // missing ends the session.
+//
+// --force skips ufw's own "may disrupt existing ssh connections" question. The
+// command runs without a terminal, so that question could not be answered;
+// the confirm dialog asks it instead, with the rules that decide it already
+// read (UfwEnablePlan).
 func BuildUfwEnable() (posture.Command, error) {
 	return posture.Command{
-		Argv:        []string{"ufw", "enable"},
+		Argv:        []string{"ufw", "--force", "enable"},
 		Description: "Enable ufw, now and on every boot",
 		Destructive: true,
 	}, nil
@@ -445,18 +450,7 @@ func (r *Real) BuildAction(probeID, actionID string) (posture.Plan, error) {
 
 	switch kind {
 	case ActionUfwEnable:
-		cmd, err := BuildUfwEnable()
-		if err != nil {
-			return posture.Plan{}, err
-		}
-		return posture.Plan{
-			Title: "Enable ufw",
-			Body: "ufw will start filtering now and on every boot.\n" +
-				"If you are connected over the network and ufw has no rule for " +
-				"ssh, this ends the session.",
-			Commands: []posture.Command{cmd},
-			Danger:   true,
-		}, nil
+		return r.ufwPlan()
 
 	case ActionEnableTimer:
 		cmd, err := BuildEnableTimer(argument)
