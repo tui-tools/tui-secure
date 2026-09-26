@@ -3,9 +3,11 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/tui-tools/tui-secure/badge)](https://scorecard.dev/viewer/?uri=github.com/tui-tools/tui-secure)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14368/badge)](https://www.bestpractices.dev/projects/14368)
 
+<!-- stability:start -->
 > **Beta.** The family is days old and still changing. Package names, flags
 > and keys may move without notice until 1.0. Pin versions, and report what
 > breaks.
+<!-- stability:end -->
 
 One screen for the security posture of one Linux machine. Eight probes — Secure
 Boot, the MAC layer, the firewall, sshd, pending updates, accounts, kernel
@@ -129,7 +131,7 @@ Upgrades then arrive with the rest of your system updates.
 ### Any distribution, static binary
 
 ```sh
-curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.2.2/tui-secure_0.2.2_linux_amd64.tar.gz | tar -xz tui-secure
+curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.2.3/tui-secure_0.2.3_linux_amd64.tar.gz | tar -xz tui-secure
 sudo install -m0755 tui-secure /usr/local/bin/tui-secure
 ```
 
@@ -234,7 +236,7 @@ shown as an exact command line and confirmed first:
 
 | Key | What runs |
 | --- | --- |
-| `a` on the firewall probe | `ufw enable`, or `systemctl enable --now firewalld`, or `systemctl enable --now nftables` — whichever firewall this machine actually has |
+| `a` on the firewall probe | `ufw --force enable`, or `systemctl enable --now firewalld`, or `systemctl enable --now nftables` — whichever firewall this machine actually has |
 | `a` on the SSH probe | `sshd -t -f <staged drop-in>`, then `install -m 600 <it> /etc/ssh/sshd_config.d/50-tui-secure.conf`, then `systemctl reload sshd`. One keyword at a time, and every keyword the probe grades as a weakness has its own `Set X to Y`: `PermitRootLogin no`, `PasswordAuthentication no`, `PermitEmptyPasswords no`, `PubkeyAuthentication yes`, `MaxAuthTries 4`, `X11Forwarding no` |
 | `a` on the kernel probe | `install -m 644 <staged drop-in> /etc/sysctl.d/90-tui-secure.conf`, then `sysctl -w <key>=<value>` |
 | `a` on the updates probe | `systemctl enable --now <the distribution's update timer>` |
@@ -579,8 +581,13 @@ widgets, the config loader and the command runner shared by the whole family.
 ## Safety notes
 
 - Enabling ufw on a machine you are connected to over the network will end the
-  session if ufw has no rule for ssh. The confirm dialog says so before you
-  agree.
+  session if ufw has no rule for ssh. Before you agree, the confirm dialog
+  reads the rules ufw will load (`ufw show added`, and the default incoming
+  policy) and says whether the ssh port is allowed: the port of the session you
+  are in, or the one sshd listens on. When it is not allowed, is allowed only
+  from some sources, or the rules could not be read, the warning is in the
+  dialog's red title. That dialog is the question ufw itself would ask, so the
+  command runs as `ufw --force enable`.
 - The `/etc/sysctl.d/90-tui-secure.conf` drop-in is this tool's own file, and
   each line in it was agreed to once. Setting a second key keeps the first;
   removing a line and running `sudo sysctl --system` undoes it.
