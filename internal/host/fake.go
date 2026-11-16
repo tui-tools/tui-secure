@@ -523,7 +523,7 @@ func (f *Fake) ssh() posture.Probe {
 		stack("sshd: running"))
 
 	probe.Status = posture.Worst(statuses...)
-	probe.Summary = sshSummary(settings, probe.Status)
+	probe.Summary = sshSummary(settings, probe.Status, SSHDService{Unit: "sshd", Running: true})
 	probe.Evidence = []posture.Evidence{
 		{Command: "sudo -n sshd -T",
 			Line: "passwordauthentication " + settings["passwordauthentication"]},

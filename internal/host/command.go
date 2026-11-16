@@ -656,6 +656,7 @@ func (r *Real) sysctlPlan(name string) (posture.Plan, error) {
 func (r *Real) sshdPlan(name string) (posture.Plan, error) {
 	r.mu.Lock()
 	unit, settings := r.sshdUnit, r.sshdSettingsSeen
+	service, privsepDir := r.sshdServiceSeen, r.sshdPrivsepDir
 	r.mu.Unlock()
 	if unit == "" {
 		unit = "sshd"
@@ -681,12 +682,14 @@ func (r *Real) sshdPlan(name string) (posture.Plan, error) {
 	names, contents := sshdDropInFiles()
 
 	input := SSHDPlanInput{
-		Key:       key.Key,
-		Effective: settings,
-		Existing:  string(existing),
-		Unit:      unit,
-		Paths:     ScanLoginPaths(string(passwd)),
-		Shadow:    SSHDShadowedBy(names, contents, key.Key),
+		Key:        key.Key,
+		Effective:  settings,
+		Existing:   string(existing),
+		Unit:       unit,
+		Service:    service,
+		PrivsepDir: privsepDir,
+		Paths:      ScanLoginPaths(string(passwd)),
+		Shadow:     SSHDShadowedBy(names, contents, key.Key),
 	}
 	staged, err := r.stageSSHD(input)
 	if err != nil {

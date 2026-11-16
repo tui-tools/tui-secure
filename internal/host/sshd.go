@@ -475,6 +475,13 @@ type SSHDPlanInput struct {
 	Existing string
 	// Unit is the ssh server's unit name on this machine.
 	Unit string
+	// Service is how the ssh server runs: active, or idle behind a socket. Its
+	// zero value is a server whose state was not read, and the plan then keeps
+	// the plain reload of Unit it always built.
+	Service SSHDService
+	// PrivsepDir is the privilege separation directory sshd reported missing
+	// when the configuration was read, empty when sshd did not stop there.
+	PrivsepDir string
 	// Paths is what the authorized-key scan found.
 	Paths LoginPath
 	// Shadow names a drop-in sshd reads before this tool's and which already
@@ -505,6 +512,19 @@ func SSHDPlan(in SSHDPlanInput, tempPath string) (posture.Plan, error) {
 		return posture.Plan{}, fmt.Errorf("host: %s", refusal)
 	}
 
+	// sshd refuses `sshd -t -f` while its privilege separation directory is
+	// missing, so on an idle server the check would fail before reading the
+	// file. The directory is created first, as its own previewed step; one
+	// outside /run belongs to the package and is a refusal, never a reason to
+	// skip the check.
+	var commands []posture.Command
+	if in.PrivsepDir != "" {
+		ensure, ensureErr := BuildEnsurePrivsepDir(in.PrivsepDir)
+		if ensureErr != nil {
+			return posture.Plan{}, ensureErr
+		}
+		commands = append(commands, ensure)
+	}
 	validateCmd, err := BuildSSHDValidate(tempPath)
 	if err != nil {
 		return posture.Plan{}, err
@@ -513,12 +533,16 @@ func SSHDPlan(in SSHDPlanInput, tempPath string) (posture.Plan, error) {
 	if err != nil {
 		return posture.Plan{}, err
 	}
-	reloadCmd, err := BuildSSHDReload(in.Unit)
+	reloadCmd, err := sshdApplyFor(in)
 	if err != nil {
 		return posture.Plan{}, err
 	}
+	commands = append(commands, validateCmd, installCmd, reloadCmd)
 
 	body := key.Why + "."
+	if in.PrivsepDir != "" {
+		body += "\n\n" + PrivsepExplanation(in.PrivsepDir, in.Service) + "."
+	}
 	if warning := SSHDLockoutWarning(after, in.Paths); warning != "" {
 		body += "\n\n" + warning
 	}
@@ -532,9 +556,19 @@ func SSHDPlan(in SSHDPlanInput, tempPath string) (posture.Plan, error) {
 	return posture.Plan{
 		Title:    "Set " + key.Key + " to " + key.Want,
 		Body:     body,
-		Commands: []posture.Command{validateCmd, installCmd, reloadCmd},
+		Commands: commands,
 		Danger:   true,
 	}, nil
+}
+
+// sshdApplyFor picks the command that applies the drop-in. A plan whose
+// service state was read uses BuildSSHDApply; one built without it (the unit
+// name alone) keeps the plain reload.
+func sshdApplyFor(in SSHDPlanInput) (posture.Command, error) {
+	if in.Service.Unit == "" {
+		return BuildSSHDReload(in.Unit)
+	}
+	return BuildSSHDApply(in.Service)
 }
 
 // effectiveAfter is the configuration this machine would have once the drop-in
