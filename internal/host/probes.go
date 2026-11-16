@@ -515,8 +515,9 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 	probe := posture.Probe{ID: posture.ProbeSSH, Title: titleFor(posture.ProbeSSH)}
 	defer func() { probe.Evidence, probe.Raw = c.evidence, c.raw.String() }()
 
-	active, unit := r.sshdActive(ctx, c)
-	settings, source, err := r.sshdSettings(ctx, c)
+	service := r.sshdService(ctx, c)
+	active, unit := service.Exposed(), service.Unit
+	settings, source, privsepDir, err := r.sshdSettings(ctx, c)
 	if settings == nil {
 		probe.Status = posture.StatusUnknown
 		probe.Summary = "could not read the sshd configuration"
@@ -527,9 +528,9 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 		probe.Fix.Tool = sshdOwner
 		probe.Fix.Hint = sshdReadHint
 		probe.Findings = append(probe.Findings,
-			posture.Finding{Label: "running", Value: yesNo(active, "yes", "no"),
+			posture.Finding{Label: "running", Value: service.State(),
 				Status: posture.StatusOK},
-			stack("sshd: "+yesNo(active, "running", "stopped")))
+			stack(sshdStackValue(service)))
 		return probe
 	}
 
@@ -552,8 +553,15 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 	probe.Findings = append(probe.Findings, posture.Finding{
 		Label: "Port", Value: orUnknown(settings["port"]), Status: posture.StatusOK})
 	probe.Findings = append(probe.Findings, posture.Finding{
-		Label: "running", Value: yesNo(active, unit+" is active", "not running"),
-		Status: posture.StatusOK})
+		Label: "running", Value: service.State(), Status: posture.StatusOK})
+	if privsepDir != "" {
+		// sshd stopped at its missing runtime directory, so the keywords came
+		// from the files. Saying so here keeps the reader from taking the
+		// fallback for a configuration sshd refused.
+		probe.Findings = append(probe.Findings, posture.Finding{
+			Label: "sshd check", Value: privsepDir + " missing",
+			Status: posture.StatusOK, Note: PrivsepExplanation(privsepDir, service)})
+	}
 
 	if failed, failedNote := r.failedLogins(ctx, c); failed >= 0 {
 		status := posture.StatusOK
@@ -570,21 +578,22 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 	if !active {
 		// Nothing is listening, so the settings are what sshd *would* apply.
 		// They are still worth showing, and still worth grading, but a stopped
-		// server is not an exposure today.
+		// server is not an exposure today. An idle socket-activated server is
+		// not this case: its socket answers on the port and starts sshd with
+		// exactly these settings, so it is graded like a running one.
 		probe.Status = posture.StatusOK
 		probe.Summary = "the ssh server is not running"
 	} else {
-		probe.Summary = sshSummary(settings, probe.Status)
+		probe.Summary = sshSummary(settings, probe.Status, service)
 	}
-	probe.Findings = append(probe.Findings, stack("sshd: "+
-		yesNo(active, "running", "stopped")))
+	probe.Findings = append(probe.Findings, stack(sshdStackValue(service)))
 
 	probe.Actions = append(probe.Actions, sshdActions(settings)...)
 	if len(probe.Actions) > 0 {
 		probe.Fix.Hint = "Each keyword below can be set in " + SSHDDropInPath +
 			", checked with `sshd -t -f` and reloaded. Press a to do it one " +
 			"keyword at a time, previewed first."
-		probe.Fix.Command = "sudo sshd -t && sudo systemctl reload " + unit
+		probe.Fix.Command = sshdFixCommand(service)
 	} else if probe.Status != posture.StatusOK {
 		// Nothing here is a keyword this tool sets. Saying whose job it is
 		// beats an empty fix column, and the two reasons for landing here get
@@ -602,6 +611,7 @@ func (r *Real) probeSSH(ctx context.Context) posture.Probe {
 	// one, so what the dialog changes is what the screen judged.
 	r.mu.Lock()
 	r.sshdUnit, r.sshdSettingsSeen = unit, settings
+	r.sshdServiceSeen, r.sshdPrivsepDir = service, privsepDir
 	r.mu.Unlock()
 	probe.Findings = append(probe.Findings, posture.Finding{
 		Label: "read from", Value: source, Status: posture.StatusOK})
@@ -628,10 +638,17 @@ func sshdActions(settings map[string]string) []posture.Action {
 	return actions
 }
 
-// sshSummary is the one line the sshd row shows.
-func sshSummary(settings map[string]string, status posture.Status) string {
+// sshSummary is the one line the sshd row shows. An idle socket-activated
+// server is described as listening rather than running, because nothing has
+// started it yet, but it is judged by the same settings.
+func sshSummary(settings map[string]string, status posture.Status,
+	service SSHDService) string {
+	subject := "sshd is running"
+	if !service.Running && service.SocketActivated() {
+		subject = "sshd is socket-activated (" + service.Socket + " listening)"
+	}
 	if status == posture.StatusOK {
-		return "sshd is running with keys only and root login off"
+		return subject + " with keys only and root login off"
 	}
 	var flags []string
 	if strings.EqualFold(settings["permitrootlogin"], "yes") {
@@ -649,25 +666,35 @@ func sshSummary(settings map[string]string, status posture.Status) string {
 		// guess what "worth a look" means.
 		if weak := len(sshdActions(settings)); weak > 0 {
 			return fmt.Sprintf(
-				"sshd is running, with %d keyword(s) this tool would change", weak)
+				"%s, with %d keyword(s) this tool would change", subject, weak)
 		}
-		return "sshd is running, with settings worth a look"
+		return subject + ", with settings worth a look"
 	}
-	return "sshd is running with " + strings.Join(flags, " and ")
+	return subject + " with " + strings.Join(flags, " and ")
 }
 
-// sshdActive reports whether the ssh server is running, and under which unit
-// name — Debian calls it ssh, everyone else calls it sshd.
-func (r *Real) sshdActive(ctx context.Context, c *collector) (bool, string) {
-	for _, unit := range []string{"sshd", "ssh"} {
-		out, preview, err := r.read(ctx, c, "systemctl", "is-active", unit)
-		state := strings.TrimSpace(out)
-		if err == nil && state == "active" {
-			c.judged(preview, unit+": "+state)
-			return true, unit
+// sshdService reads how the ssh server runs here: under which unit name
+// (Debian calls it ssh, everyone else sshd), whether the service is active,
+// and whether a socket unit listens for it. The decision itself is
+// ResolveSSHDService; this only asks systemctl, once per unit.
+func (r *Real) sshdService(ctx context.Context, c *collector) SSHDService {
+	asked := map[string]string{}
+	previews := map[string]string{}
+	service := ResolveSSHDService(func(unit string) string {
+		if state, done := asked[unit]; done {
+			return state
 		}
+		out, preview, _ := r.read(ctx, c, "systemctl", "is-active", unit)
+		asked[unit], previews[unit] = activeState(out), preview
+		return asked[unit]
+	})
+	if service.Running {
+		c.judged(previews[service.Unit], service.Unit+": active")
 	}
-	return false, "sshd"
+	if service.SocketActivated() {
+		c.judged(previews[service.Socket], service.Socket+": active")
+	}
+	return service
 }
 
 // sshdSettings reads the effective configuration.
@@ -676,15 +703,26 @@ func (r *Real) sshdActive(ctx context.Context, c *collector) (bool, string) {
 // and defaults — and it needs root, which this process may not have. The
 // fallback parses the files directly: less accurate, since it cannot resolve a
 // Match block, and honest about which one was used through the source string.
+//
+// When sshd stops at a missing privilege separation directory (an idle
+// socket-activated server whose /run/sshd does not exist yet), `sshd -T` fails
+// whatever the privileges, so the files are read instead and the directory is
+// returned for the plan to create before its own `sshd -t -f`.
 func (r *Real) sshdSettings(ctx context.Context, c *collector) (
-	settings map[string]string, source string, err error) {
+	settings map[string]string, source, privsepDir string, err error) {
 	out, preview, testErr := r.readPrivileged(ctx, c, "sshd", "-T")
 	if testErr == nil {
 		settings = ParseSSHDConfig(out)
 		if line := settingLine(out, "permitrootlogin"); line != "" {
 			c.judged(preview, line)
 		}
-		return settings, "`sshd -T`", nil
+		return settings, "`sshd -T`", "", nil
+	}
+	fallback := "sshd_config (sshd -T needs root)"
+	if dir, missing := MissingPrivsepDir(out); missing {
+		privsepDir = dir
+		fallback = "sshd_config (sshd idle, " + dir + " missing)"
+		c.judged(preview, "Missing privilege separation directory: "+dir)
 	}
 
 	var text strings.Builder
@@ -716,11 +754,11 @@ func (r *Real) sshdSettings(ctx context.Context, c *collector) (
 		if readErr == nil {
 			readErr = testErr
 		}
-		return nil, "", readErr
+		return nil, "", privsepDir, readErr
 	}
 	c.record("cat "+strings.Join(sshdConfigPaths, " ")+" "+sshdDropInDir+"/*.conf",
 		text.String())
-	return ParseSSHDConfig(text.String()), "sshd_config (sshd -T needs root)", nil
+	return ParseSSHDConfig(text.String()), fallback, privsepDir, nil
 }
 
 // settingLine finds the line of `sshd -T` output that carries a keyword, which

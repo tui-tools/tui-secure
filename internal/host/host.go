@@ -104,8 +104,14 @@ type Real struct {
 	// sshdSettingsSeen the effective configuration the ssh probe read.
 	// portUnits maps a listening port to the unit the ports probe traced it
 	// back to.
+	//
+	// sshdServiceSeen is how that server runs (service active, socket
+	// listening), and sshdPrivsepDir the privilege separation directory sshd
+	// reported missing, empty when it did not.
 	sshdUnit         string
 	sshdSettingsSeen map[string]string
+	sshdServiceSeen  SSHDService
+	sshdPrivsepDir   string
 	portUnits        map[string]string
 }
 
