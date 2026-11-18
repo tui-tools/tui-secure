@@ -576,7 +576,7 @@ func (f *Fake) updates() posture.Probe {
 				Line: demoTimer + ": " + timerState},
 		},
 		Fix: posture.Fix{
-			Tool:    "tui-update (planned)",
+			Tool:    "tui-update",
 			Hint:    "Apply the updates, and reboot if the kernel or a core library moved.",
 			Command: "sudo pacman -Syu",
 		},
@@ -612,7 +612,7 @@ func (f *Fake) accounts() posture.Probe {
 			{Command: "sudo -n -l", Line: "(demo) ALL=(ALL) NOPASSWD: /usr/bin/pacman"},
 		},
 		Fix: posture.Fix{
-			Tool: "tui-users (planned)",
+			Tool: "tui-users",
 			Hint: "Remove the second UID 0 account, or lock the accounts with no password.",
 		},
 		Raw: "$ awk -F: '$3==0' /etc/passwd\n" + demoPasswd +
