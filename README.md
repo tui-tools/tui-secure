@@ -519,7 +519,7 @@ hidden; one below the minimum is marked as such and the tool still runs.
 | Binary | `systemctl` |
 | Version read with | `systemctl --version` |
 | Minimum | 245 |
-| Tested | `255`, `257`, `259`, `261` |
+| Tested | `255`, `257`, `259`, `261`, `262` |
 | Version-gated features | `journal-grep` (since 246) |
 
 | Versions | What changes |
@@ -533,7 +533,7 @@ hidden; one below the minimum is marked as such and the tool still runs.
 | Binary | `sshd` |
 | Version read with | `ssh -V` |
 | Minimum | 8.2 |
-| Tested | `9.6`, `9.9`, `10.2`, `10.5` |
+| Tested | `9.6`, `9.9`, `10.2`, `10.5`, `10.6` |
 | Version-gated features | `sshd-test-config` (since 8.2) |
 
 | Versions | What changes |

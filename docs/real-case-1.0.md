@@ -56,3 +56,38 @@ published here.
 The SSH, ports and firewall-enable fixes were not applied on this machine
 (the firewall one only by accident, against the bug above, where it was a
 no-op on a running firewalld).
+
+## Second run: tui-kit v0.5.0, on all three families
+
+tui-kit v0.5.0 changed how a command runs as root: it is looked up only in the
+system directories and must be owned by root, it starts from a minimal
+environment, and as root the tool refuses configuration files root does not
+own and `TUI_<TOOL>_*` variables carried in from sudo, su, doas or pkexec. So
+the work above was repeated on 2026-11-18 with a static build of this branch's
+head, `5636f34` (main with tui-kit v0.5.0 and Go 1.27.4 merged in),
+installed root-owned as `/usr/local/bin/tui-secure`, on fresh tui-lab machines on
+the project's own server: Ubuntu 24.04.5 (apt), Fedora 44 (dnf) and Omarchy
+Server 4.0.1 (pacman), lab VMs again, not production hosts.
+
+- The smoke test passed on all three as the ordinary user `lab`, who
+  escalates with `sudo -n`, and again as root (`sudo env TUI_LAB_BIN=<binary> bash smoke.sh`):
+  26/26 on Ubuntu, 27/27 on Fedora and Omarchy Server, as user and as root. On Omarchy Server the escalation and every command it runs were
+  found through `/usr/sbin`, which the new kit trusts; nothing was refused.
+- The main change was driven through the TUI in tmux once per family as
+  `lab` and once as root, and checked on the machine afterwards:
+  a kernel hardening fix through `a`, written to
+  `/etc/sysctl.d/90-tui-secure.conf`, on all three (as root the fixes left
+  were already applied, so the run there checked the keys and `--check`).
+- tui-update then upgraded all three machines (see its report), Omarchy
+  Server to 4.0.2. The smoke test passed again on the upgraded machines, and
+  the new versions it observed are the 2026-11-18 lines in
+  `compat/results.jsonl` (systemd 262 and OpenSSH 10.6 on Omarchy Server 4.0.2). Three runs of the smoke test made right after the fix above were left out: they failed only because the fix had left the drop-in that the test expects to be absent, and passed once it was removed.
+- The contract changes were driven on all three: with the cursor on the
+  Firewall row and `fs.protected_symlinks` lowered behind the tool's back,
+  `r` left the Kernel hardening row as it was and `R` updated it (one more key
+  below the recommended value); `--check` names the fix tools `tui-update` and
+  `tui-users`, with no "(planned)".
+
+New finding, filed as #34: as an ordinary user on Ubuntu, `aa-status` refuses
+and the MAC probe reports a parse error instead of the refusal. The same with
+the tui-kit v0.4.6 build; not a regression and not a contract question.

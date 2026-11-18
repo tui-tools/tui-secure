@@ -10,3 +10,6 @@
 {"backend": "systemd", "date": "2026-08-30", "distro": "ubuntu-24.04", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "255"}
 {"backend": "openssh", "date": "2026-08-30", "distro": "ubuntu-24.04", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "9.6"}
 {"backend": "ufw", "date": "2026-08-30", "distro": "ubuntu-24.04", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "0.36.2"}
+{"backend": "systemd", "date": "2026-11-18", "distro": "omarchy-server-4.0.2", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "262"}
+{"backend": "openssh", "date": "2026-11-18", "distro": "omarchy-server-4.0.2", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "10.6"}
+{"backend": "ufw", "date": "2026-11-18", "distro": "omarchy-server-4.0.2", "result": "pass", "suite": "smoke", "tool": "tui-secure", "version": "0.36.2"}
