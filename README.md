@@ -4,8 +4,11 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14368/badge)](https://www.bestpractices.dev/projects/14368)
 
 <!-- stability:start -->
-> **Beta** tools may still change keys, flags or output before their 1.0;
-> stable tools follow semver. Pin versions, and report what breaks.
+> **Stable since v1.0.0.** Keys, flags and the `--check` JSON follow semver:
+> anything new arrives in a minor release, and a removal or a change of meaning
+> waits for the next major, announced one minor before. What stable means: [the
+> family's
+> bar](https://github.com/tui-tools/tui-kit/blob/main/docs/stability.md).
 <!-- stability:end -->
 
 One screen for the security posture of one Linux machine. Eight probes — Secure
@@ -20,9 +23,9 @@ answer looks like for each. `tui-secure` puts them on one screen, in the
 
 ![The posture](docs/screenshots/tui-secure-main.png)
 
-> **Status: early, under validation.** An independent tool that follows the
-> Omarchy visual style; it is **not** part of the Omarchy project and not
-> endorsed by its maintainers. Expect rough edges.
+> An independent tool that follows the [Omarchy](https://omarchy.org) visual
+> style; it is not part of the Omarchy project and not endorsed by its
+> maintainers.
 
 ## Install
 
@@ -151,7 +154,7 @@ Upgrades then arrive with the rest of your system updates.
 ### Any distribution, static binary
 
 ```sh
-curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v0.2.5/tui-secure_0.2.5_linux_amd64.tar.gz | tar -xz tui-secure
+curl -fsSL https://github.com/tui-tools/tui-secure/releases/download/v1.0.0/tui-secure_1.0.0_linux_amd64.tar.gz | tar -xz tui-secure
 sudo install -m0755 tui-secure /usr/local/bin/tui-secure
 ```
 
@@ -400,6 +403,48 @@ is reported as being there without naming the path. `--report` works with
 The bug form asks for this block first — see
 [`.github/ISSUE_TEMPLATE/bug_report.yml`](.github/ISSUE_TEMPLATE/bug_report.yml).
 
+## Stability
+
+tui-secure is stable since 1.0.0 and follows [semver](https://semver.org).
+What is frozen is the contract a script or a habit can depend on:
+
+- the keys: every key the help screen (`?`) and [Keys](#keys) list, on the
+  posture screen and the probe detail screen. `R` re-runs every probe and `r`
+  the selected one; before 1.0 it was the other way round, and the swap, to
+  match the family's `R` for a re-read, is the one change made for the freeze;
+- the flags: `--check`, `--demo`, `--report`, `--sudo`, `--theme` and
+  `--version`, and the `TUI_SECURE_*` configuration keys (`sudo`, `theme`);
+- the eight probe ids: `secure-boot`, `mac`, `firewall`, `ssh`, `updates`,
+  `accounts`, `kernel`, `ports`, and the four verdicts: `ok`, `warn`, `bad`,
+  `unknown`;
+- the `--check` JSON: every field name and what it means. At the top level:
+  `tool`, `version`, `backend`, `describe`, `distro`, `distroId`, `kernel`,
+  `stack`, `score`, `worst`, `probes` and `compat`. `stack`: `secureBoot`,
+  `mac`, `firewall`, `sshd`, `updates`. `score`: `value`, `counted`, `ok`,
+  `warn`, `bad`, `unknown`. Each `probes` row: `id`, `title`, `status`,
+  `summary`, `reason`, `findings` (each `label`, `value`, `status`, `note`),
+  `evidence` (each `command`, `line`), `fix` (`hint`, `tool`, `command`) and
+  `actions` (each `id`, `label`, `danger`). Each `compat` entry: `backend`,
+  `version`, `minimum`, `status`, and `notes` and `detail` when there are any.
+  A field that is left out when empty is left out on purpose, and that is part
+  of its meaning.
+
+What a probe's `summary`, `findings` and `evidence` say is prose read off the
+machine, and it can grow more precise in a minor release; the probe's `status`
+for the same machine state does not change outside a major one. The fixes `a`
+offers may gain a new action in a minor release; an action's `id` keeps its
+meaning.
+
+A minor release only adds: new keys, new flags, new `--check` fields. Removing
+or renaming one, or changing what it means, happens only in a major release,
+and the minor release before that major warns about it, on screen and in
+`--check`. The commands a key previews may gain a safer flag or a check in a
+minor release; what they change on the machine does not. The bar a tool in the
+family meets to be called stable is in [tui-kit's stability
+page](https://github.com/tui-tools/tui-kit/blob/main/docs/stability.md); the
+real machine this tool drove for it is described in
+[docs/real-case-1.0.md](docs/real-case-1.0.md).
+
 ## Keys
 
 | Key | Action |
@@ -411,8 +456,8 @@ The bug form asks for this block first — see
 | `esc` | Leave the detail screen |
 | `/` | Filter the probes (matches name, verdict, summary and findings; `esc` clears) |
 | `a` | Apply an offered fix, previewed and confirmed first |
-| `r` | Re-run every probe |
-| `R` | Re-run the selected probe |
+| `R` / `ctrl+r` | Re-run every probe |
+| `r` | Re-run the selected probe |
 | `?` | Help |
 | `q` | Quit |
 
@@ -420,7 +465,7 @@ The bug form asks for this block first — see
 
 ![Help](docs/screenshots/tui-secure-help.png)
 
-## What v0.1 can do
+## What it can do
 
 - Run eight probes against the real machine, each with its own command, its own
   grading rules and its own fix.
@@ -438,7 +483,7 @@ The bug form asks for this block first — see
 - Print the whole posture as JSON for a script or a test.
 - Follow the active Omarchy theme, and respect `NO_COLOR`.
 
-## What v0.1 cannot do
+## What it cannot do
 
 - **No history.** It reads the machine now; it does not keep yesterday's answer
   to compare against. There is no state of its own, by design.
@@ -474,7 +519,7 @@ hidden; one below the minimum is marked as such and the tool still runs.
 | Binary | `systemctl` |
 | Version read with | `systemctl --version` |
 | Minimum | 245 |
-| Tested | `255`, `257`, `259`, `261` |
+| Tested | `255`, `257`, `259`, `261`, `262` |
 | Version-gated features | `journal-grep` (since 246) |
 
 | Versions | What changes |
@@ -488,7 +533,7 @@ hidden; one below the minimum is marked as such and the tool still runs.
 | Binary | `sshd` |
 | Version read with | `ssh -V` |
 | Minimum | 8.2 |
-| Tested | `9.6`, `9.9`, `10.2`, `10.5` |
+| Tested | `9.6`, `9.9`, `10.2`, `10.5`, `10.6` |
 | Version-gated features | `sshd-test-config` (since 8.2) |
 
 | Versions | What changes |

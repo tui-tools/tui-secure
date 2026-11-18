@@ -315,14 +315,25 @@ func TestBusyStateSwallowsInput(t *testing.T) {
 	}
 }
 
-// TestReRunOneProbe covers R, which is the key you press after fixing
+// TestReRunOneProbe covers r, which is the key you press after fixing
 // something outside this tool.
 func TestReRunOneProbe(t *testing.T) {
 	a, _ := newTestApp(t)
 	selectProbe(t, a, posture.ProbeFirewall)
-	drain(t, a, press(a, "R"))
+	drain(t, a, press(a, "r"))
 	if !strings.Contains(a.status, "Firewall") {
 		t.Errorf("status = %q, want the probe that was re-run", a.status)
+	}
+}
+
+// TestRReRunsEveryProbe: R is the family's re-read, so here it re-runs all
+// eight probes rather than the one on screen.
+func TestRReRunsEveryProbe(t *testing.T) {
+	a, _ := newTestApp(t)
+	selectProbe(t, a, posture.ProbeFirewall)
+	drain(t, a, press(a, "R"))
+	if strings.Contains(a.status, "Firewall") {
+		t.Errorf("status = %q: R re-ran one probe, want all of them", a.status)
 	}
 }
 

@@ -581,7 +581,7 @@ const sshdDropInDir = "/etc/ssh/sshd_config.d"
 // the port, the listen addresses, the ciphers, the whole file. It is only ever
 // shown when this tool has no fix of its own to offer, so a machine with a
 // weak keyword shows its own "a to fix here" instead.
-const sshdOwner = "tui-ssh (planned)"
+const sshdOwner = "tui-ssh"
 
 // sshdReadHint is what to do when the configuration could not be read. `sshd
 // -T` is sshd resolving its own files and it needs root; without it the probe
@@ -883,7 +883,7 @@ func (r *Real) probeUpdates(ctx context.Context) posture.Probe {
 	probe := posture.Probe{
 		ID: posture.ProbeUpdates, Title: titleFor(posture.ProbeUpdates),
 	}
-	probe.Fix.Tool = "tui-update (planned)"
+	probe.Fix.Tool = "tui-update"
 	defer func() { probe.Evidence, probe.Raw = c.evidence, c.raw.String() }()
 
 	family := distroFamily()
@@ -1105,7 +1105,7 @@ func (r *Real) probeAccounts(ctx context.Context) posture.Probe {
 	probe := posture.Probe{
 		ID: posture.ProbeAccounts, Title: titleFor(posture.ProbeAccounts),
 	}
-	probe.Fix.Tool = "tui-users (planned)"
+	probe.Fix.Tool = "tui-users"
 	defer func() { probe.Evidence, probe.Raw = c.evidence, c.raw.String() }()
 
 	statuses := []posture.Status{posture.StatusOK}

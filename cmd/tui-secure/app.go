@@ -363,10 +363,12 @@ func (a *app) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.mode = modeFilter
 	case "enter":
 		return a, a.openDetail()
-	case "r", "ctrl+r":
+	case "R", "ctrl+r":
+		// R re-reads everything, as it does in every tool of the family; r is
+		// the narrower re-run of the probe on screen.
 		a.loading = true
 		return a, a.load()
-	case "R":
+	case "r":
 		return a, a.reloadCurrent()
 	case "a":
 		return a, a.openActions()
@@ -399,10 +401,12 @@ func (a *app) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "pgup", "ctrl+b":
 		a.detailOffset = max(a.detailOffset-a.detailHeight(), 0)
 		return a, nil
-	case "r", "ctrl+r":
+	case "R", "ctrl+r":
+		// R re-reads everything, as it does in every tool of the family; r is
+		// the narrower re-run of the probe on screen.
 		a.loading = true
 		return a, a.load()
-	case "R":
+	case "r":
 		return a, a.reloadCurrent()
 	case "a":
 		return a, a.openActions()

@@ -371,8 +371,8 @@ func (a *app) shortHelpKeys() []ui.KeyHint {
 	return []ui.KeyHint{
 		{Key: "enter", Desc: "detail"},
 		{Key: "a", Desc: "fix"},
-		{Key: "r", Desc: "re-run all"},
-		{Key: "R", Desc: "re-run one"},
+		{Key: "R", Desc: "re-run all"},
+		{Key: "r", Desc: "re-run one"},
 		{Key: "/", Desc: "filter"},
 		{Key: "?", Desc: "help"},
 		{Key: "q", Desc: "quit"},
@@ -387,7 +387,7 @@ func (a *app) detailHelpKeys(probe posture.Probe) []ui.KeyHint {
 		hints = append(hints, ui.KeyHint{Key: "a", Desc: "fix"})
 	}
 	return append(hints,
-		ui.KeyHint{Key: "R", Desc: "re-run"},
+		ui.KeyHint{Key: "r", Desc: "re-run"},
 		ui.KeyHint{Key: "?", Desc: "help"},
 		ui.KeyHint{Key: "esc", Desc: "back"})
 }
@@ -402,8 +402,8 @@ func helpKeys() []ui.KeyHint {
 		{Key: "esc", Desc: "leave the detail screen"},
 		{Key: "/", Desc: "filter the probes (esc clears)"},
 		{Key: "a", Desc: "apply an offered fix, previewed and confirmed first"},
-		{Key: "r", Desc: "re-run every probe"},
-		{Key: "R", Desc: "re-run the selected probe"},
+		{Key: "R / ctrl+r", Desc: "re-run every probe"},
+		{Key: "r", Desc: "re-run the selected probe"},
 		{Key: "?", Desc: "this help"},
 		{Key: "q", Desc: "quit"},
 		{Key: "", Desc: ""},
