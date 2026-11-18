@@ -260,6 +260,15 @@ case "$machine" in
       "$bin --check" \
       '"firewall": "firewall: firewalld"'
 
+    # Over SSH, polkit refuses firewall-cmd to an ordinary user. A refusal
+    # must not read as "not running": the first status in the probe's block
+    # is the probe's own verdict.
+    if [[ $(systemctl is-active firewalld 2>/dev/null) == active ]]; then
+      check "a running firewalld is not reported as stopped" \
+        "$bin --check | sed -n '/\"id\": \"firewall\"/,/\"fix\"/p' | grep -m1 '\"status\"'" \
+        '"status": "(ok|warn)"'
+    fi
+
     check "the update probe knows dnf" \
       "$bin --check" \
       '"updates": "updates: fedora"'
@@ -273,7 +282,7 @@ case "$machine" in
       '"firewall": "firewall: ufw"'
 
     check "the firewall probe is not bad news" \
-      "$bin --check | sed -n '/\"id\": \"firewall\"/,/\"fix\"/p'" \
+      "$bin --check | sed -n '/\"id\": \"firewall\"/,/\"fix\"/p' | grep -m1 '\"status\"'" \
       '"status": "(ok|warn)"'
 
     # The SELinux/AppArmor addon may be absent, so unknown and warn are both

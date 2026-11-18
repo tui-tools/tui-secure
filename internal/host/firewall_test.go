@@ -1,6 +1,7 @@
 package host
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -206,5 +207,98 @@ func TestFakeAppliesThePortChange(t *testing.T) {
 	}
 	if len(after.Actions) != 0 {
 		t.Errorf("the fix is still offered: %v", after.Actions)
+	}
+}
+
+// TestFirewalldStateOverSSH: on Fedora 44, an ordinary user over SSH gets
+// polkit's refusal from `firewall-cmd --state` (exit 253), not an answer. Seen
+// on a lab machine whose firewalld had been running since boot: the probe read
+// the refusal as "not running", scored it bad and offered to start it. The
+// refusal now sends the read through sudo -n, and when that is refused too,
+// systemd's view of the unit decides.
+func TestFirewalldStateOverSSH(t *testing.T) {
+	refused := fixture(t, "firewall-cmd-state-refused-fedora44.txt")
+	errRefused := errors.New("exit status 253")
+	errSudo := errors.New("sudo: a password is required")
+
+	for _, tc := range []struct {
+		name      string
+		plain     string
+		plainErr  error
+		escalated string
+		escErr    error
+		active    string
+		want      string
+		wantNote  bool
+		wantErr   bool
+	}{
+		{name: "answered as the user", plain: "running", want: "running"},
+		// firewall-cmd exits 252 when firewalld is down; the error rides along
+		// with the answer, which the probe reads first.
+		{name: "not running, as the user", plain: "not running",
+			plainErr: errors.New("exit status 252"), want: "not running", wantErr: true},
+		{name: "refused, answered through sudo", plain: refused, plainErr: errRefused,
+			escalated: "running", want: "running"},
+		{name: "refused twice, the unit is active", plain: refused, plainErr: errRefused,
+			escalated: "", escErr: errSudo, active: "active", want: "running", wantNote: true},
+		{name: "refused twice, the unit is inactive", plain: refused, plainErr: errRefused,
+			escalated: "", escErr: errSudo, active: "inactive", want: "not running"},
+		{name: "refused, and nothing else answers", plain: refused, plainErr: errRefused,
+			escErr: errSudo, want: "", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			read := func(escalate bool) (string, string, error) {
+				if escalate {
+					return tc.escalated, "sudo -n firewall-cmd --state", tc.escErr
+				}
+				return tc.plain, "firewall-cmd --state", tc.plainErr
+			}
+			active := func() (string, string, error) {
+				return tc.active, "systemctl is-active firewalld", nil
+			}
+			state, _, note, err := firewalldState(read, active)
+			if state != tc.want {
+				t.Errorf("state = %q, want %q", state, tc.want)
+			}
+			if (note != "") != tc.wantNote {
+				t.Errorf("note = %q", note)
+			}
+			if (err != nil) != tc.wantErr {
+				t.Errorf("err = %v", err)
+			}
+		})
+	}
+
+	if !firewalldRefused(refused) || firewalldRefused("running") ||
+		firewalldRefused("not running") {
+		t.Error("firewalldRefused does not tell the refusal from an answer")
+	}
+}
+
+// TestFirewalldReadEscalatesOnlyOnRefusal: the zone reads go through sudo -n
+// only when polkit refused them, and a refusal is never returned as output.
+func TestFirewalldReadEscalatesOnlyOnRefusal(t *testing.T) {
+	refused := fixture(t, "firewall-cmd-state-refused-fedora44.txt")
+	var escalations int
+	read := func(escalate bool, _ ...string) (string, string, error) {
+		if escalate {
+			escalations++
+			return "public", "sudo -n firewall-cmd --get-default-zone", nil
+		}
+		return refused, "firewall-cmd --get-default-zone", errors.New("exit status 253")
+	}
+	out, _, err := firewalldRead(read, "--get-default-zone")
+	if err != nil || out != "public" || escalations != 1 {
+		t.Errorf("out = %q, err = %v, escalations = %d", out, err, escalations)
+	}
+
+	plain := func(escalate bool, _ ...string) (string, string, error) {
+		if escalate {
+			t.Error("an answered read was escalated")
+		}
+		return "public", "firewall-cmd --get-default-zone", nil
+	}
+	if out, _, err := firewalldRead(plain, "--get-default-zone"); err != nil || out != "public" {
+		t.Errorf("out = %q, err = %v", out, err)
 	}
 }

@@ -388,11 +388,24 @@ func (r *Real) ufw(ctx context.Context, c *collector, probe *posture.Probe) {
 		stack("firewall: ufw"))
 }
 
-// firewalld fills in the firewall probe from firewalld, whose state and zones
-// any user may read.
+// firewalld fills in the firewall probe from firewalld. Its state and zones
+// are open to any user in an active local session, but polkit refuses them to
+// an ordinary user over SSH, which is where a server is driven from; see
+// firewalldState for what happens then.
 func (r *Real) firewalld(ctx context.Context, c *collector, probe *posture.Probe) {
-	out, preview, err := r.read(ctx, c, "firewall-cmd", "--state")
-	state := strings.TrimSpace(out)
+	read := func(escalate bool, args ...string) (string, string, error) {
+		argv := append([]string{"firewall-cmd"}, args...)
+		if escalate {
+			return r.readPrivileged(ctx, c, argv...)
+		}
+		return r.read(ctx, c, argv...)
+	}
+	unitActive := func() (string, string, error) {
+		return r.read(ctx, c, "systemctl", "is-active", "firewalld")
+	}
+	state, preview, note, err := firewalldState(
+		func(escalate bool) (string, string, error) { return read(escalate, "--state") },
+		unitActive)
 	c.judged(preview, state)
 	if err != nil && state == "" {
 		probe.Status = posture.StatusUnknown
@@ -416,11 +429,21 @@ func (r *Real) firewalld(ctx context.Context, c *collector, probe *posture.Probe
 	}
 
 	probe.Status = posture.StatusOK
+	probe.Summary = "firewalld is running"
+	if note != "" {
+		// Running, read from systemd: the zone needs the firewall-cmd that was
+		// refused, so it is reported as unknown rather than guessed.
+		probe.Reason = note
+		probe.Findings = append(probe.Findings,
+			posture.Finding{Label: "state", Value: state, Status: posture.StatusOK,
+				Note: note},
+			stack("firewall: firewalld"))
+		return
+	}
 	zoneName := ""
-	if zoneOut, _, zoneErr := r.read(ctx, c, "firewall-cmd", "--get-default-zone"); zoneErr == nil {
+	if zoneOut, _, zoneErr := firewalldRead(read, "--get-default-zone"); zoneErr == nil {
 		zoneName = strings.TrimSpace(zoneOut)
 	}
-	probe.Summary = "firewalld is running"
 	if zoneName != "" {
 		probe.Summary += ", default zone " + zoneName
 	}
@@ -429,7 +452,7 @@ func (r *Real) firewalld(ctx context.Context, c *collector, probe *posture.Probe
 		posture.Finding{Label: "default zone", Value: orUnknown(zoneName),
 			Status: posture.StatusOK})
 
-	if listOut, listPreview, listErr := r.read(ctx, c, "firewall-cmd", "--list-all"); listErr == nil {
+	if listOut, listPreview, listErr := firewalldRead(read, "--list-all"); listErr == nil {
 		zone := ParseFirewalldZone(listOut)
 		c.judged(listPreview, "services: "+strings.Join(zone.Services, " "))
 		probe.Findings = append(probe.Findings,
@@ -445,6 +468,65 @@ func (r *Real) firewalld(ctx context.Context, c *collector, probe *posture.Probe
 		}
 	}
 	probe.Findings = append(probe.Findings, stack("firewall: firewalld"))
+}
+
+// firewalldRefused reports firewall-cmd output that is polkit refusing the
+// caller rather than an answer. firewall-cmd prints it, and exits 253, when
+// an ordinary user outside an active local session asks anything at all:
+//
+//	org.fedoraproject.FirewallD1.NotAuthorizedException: Not Authorized(uid): org.fedoraproject.FirewallD1.info
+//	Authorization failed.
+func firewalldRefused(out string) bool {
+	return strings.Contains(out, "NotAuthorizedException") ||
+		strings.Contains(out, "Authorization failed")
+}
+
+// firewalldRead asks firewall-cmd as the user first and, when polkit refuses
+// that, again through `sudo -n`.
+func firewalldRead(read func(escalate bool, args ...string) (string, string, error),
+	args ...string) (string, string, error) {
+	out, preview, err := read(false, args...)
+	if !firewalldRefused(out) {
+		return out, preview, err
+	}
+	escalated, escalatedPreview, escalatedErr := read(true, args...)
+	if strings.TrimSpace(escalated) != "" && !firewalldRefused(escalated) {
+		return escalated, escalatedPreview, escalatedErr
+	}
+	return out, preview, fmt.Errorf("firewall-cmd %s: polkit refused it and "+
+		"sudo -n did too", strings.Join(args, " "))
+}
+
+// firewalldState decides whether firewalld is running. `firewall-cmd --state`
+// answers "running" or "not running"; when polkit refuses it, the same read
+// goes through `sudo -n`, and when that is refused too, systemd's own view of
+// the unit decides, which any user may read. note is set in that last case,
+// to say the zone could not be read. A refusal is never read as "not
+// running": on Fedora over SSH that sent every machine with a running
+// firewalld to bad, offering to start it.
+func firewalldState(read func(escalate bool) (string, string, error),
+	unitActive func() (string, string, error)) (state, preview, note string, err error) {
+	out, preview, err := read(false)
+	state = strings.TrimSpace(out)
+	if !firewalldRefused(state) {
+		return state, preview, "", err
+	}
+	escalated, escalatedPreview, escalatedErr := read(true)
+	if trimmed := strings.TrimSpace(escalated); trimmed != "" && !firewalldRefused(trimmed) {
+		return trimmed, escalatedPreview, "", escalatedErr
+	}
+	active, activePreview, _ := unitActive()
+	switch strings.TrimSpace(active) {
+	case "active", "reloading":
+		return "running", activePreview, "polkit refuses firewall-cmd to this user " +
+			"and the escalated read did not answer, so the state is systemd's and " +
+			"the zone is unknown", nil
+	case "":
+		return "", preview, "", fmt.Errorf("firewall-cmd --state: polkit refused it, " +
+			"and neither sudo -n nor systemctl answered")
+	default:
+		return "not running", activePreview, "", nil
+	}
 }
 
 // nftables fills in the firewall probe from a bare nftables ruleset, which is
