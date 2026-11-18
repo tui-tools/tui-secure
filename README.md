@@ -390,8 +390,8 @@ The bug form asks for this block first — see
 | `esc` | Leave the detail screen |
 | `/` | Filter the probes (matches name, verdict, summary and findings; `esc` clears) |
 | `a` | Apply an offered fix, previewed and confirmed first |
-| `r` | Re-run every probe |
-| `R` | Re-run the selected probe |
+| `R` / `ctrl+r` | Re-run every probe |
+| `r` | Re-run the selected probe |
 | `?` | Help |
 | `q` | Quit |
 

@@ -50,11 +50,11 @@
       "action": "Apply an offered fix, previewed and confirmed first"
     },
     {
-      "key": "r",
+      "key": "R / ctrl+r",
       "action": "Re-run every probe"
     },
     {
-      "key": "R",
+      "key": "r",
       "action": "Re-run the selected probe"
     },
     {
